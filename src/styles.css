@@ -2404,8 +2404,8 @@ button:disabled {
   background:
     radial-gradient(circle at 22% 18%, rgba(91, 210, 207, 0.12), transparent 18%),
     radial-gradient(circle at 74% 76%, rgba(227, 183, 86, 0.12), transparent 22%),
-    repeating-linear-gradient(90deg, rgba(210, 244, 248, 0.055) 0 1px, transparent 1px 6.25%),
-    repeating-linear-gradient(0deg, rgba(210, 244, 248, 0.045) 0 1px, transparent 1px 6.25%);
+    repeating-linear-gradient(90deg, rgba(210, 244, 248, 0.055) 0 1px, transparent 1px calc(100% / 32)),
+    repeating-linear-gradient(0deg, rgba(210, 244, 248, 0.045) 0 1px, transparent 1px calc(100% / 32));
 }
 
 .city-tile {
@@ -2476,7 +2476,7 @@ button:disabled {
 
 .city-unit {
   z-index: 8;
-  width: 4.8%;
+  width: 3.45%;
   aspect-ratio: 1;
   display: grid;
   place-items: center;
@@ -2501,20 +2501,26 @@ button:disabled {
   transition: transform 120ms linear, opacity 120ms linear, filter 120ms linear;
 }
 
-.city-unit.dir-up img {
+.city-unit.player.dir-up img {
   transform: rotate(0deg);
 }
 
-.city-unit.dir-right img {
+.city-unit.player.dir-right img {
   transform: rotate(90deg);
 }
 
-.city-unit.dir-down img {
+.city-unit.player.dir-down img {
   transform: rotate(180deg);
 }
 
-.city-unit.dir-left img {
+.city-unit.player.dir-left img {
   transform: rotate(-90deg);
+}
+
+.city-unit.enemy img {
+  width: 150%;
+  height: 150%;
+  transform: none;
 }
 
 .city-unit.hidden img {

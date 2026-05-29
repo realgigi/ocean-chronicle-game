@@ -241,7 +241,12 @@ const assets = {
   napoleonWrasseHost: assetUrl('/assets/mobile/hosts/napoleon-wrasse-warrior-setting-cutout-v01.png?v=20260529'),
   morayHost: assetUrl('/assets/mobile/hosts/moray-strategist-setting-cutout-v01.png?v=20260529'),
   princeIcon: assetUrl('/assets/mobile/icons/prince-clownfish-circle-v01.png?v=20260529'),
-  mechaSquid: assetUrl('/assets/mobile/posters/mecha-squid-poster.webp?v=20260530'),
+  mechaSquid: {
+    up: assetUrl('/assets/mobile/enemies/mecha-squid-up-cutout.webp?v=20260530b'),
+    down: assetUrl('/assets/mobile/enemies/mecha-squid-down-cutout.webp?v=20260530b'),
+    left: assetUrl('/assets/mobile/enemies/mecha-squid-left-cutout.webp?v=20260530b'),
+    right: assetUrl('/assets/mobile/enemies/mecha-squid-right-cutout.webp?v=20260530b'),
+  } satisfies Record<CityDirection, string>,
   stageBg: assetUrl('/assets/mobile/stages/north-battlefield-bg-v01.webp'),
   bossStates: {
     idle: assetUrl('/assets/mobile/bosses/giant-garbage-anemone-idle-v01.webp'),
@@ -567,10 +572,13 @@ const towerGoalMs = 180000;
 const towerDeathPenaltyMs = 15000;
 const towerPlayerRadius = 3.6;
 const towerPlayerStart: TowerPlayer = { x: 50, y: 48, vy: 0 };
-const cityViewSize = 50;
-const cityUnitSize = 4.5;
-const cityBase = { x: 50, y: 88, size: 9 };
-const cityPlayerStart = { x: 50, y: 76, dir: 'up' as CityDirection };
+const cityGridSize = 32;
+const cityCellSize = 100 / cityGridSize;
+const cityViewCells = 16;
+const cityViewSize = cityCellSize * cityViewCells;
+const cityUnitSize = cityCellSize * 0.92;
+const cityBase = { x: cityCellCenter(15.5), y: cityCellCenter(29.5), size: cityCellSize * 2 };
+const cityPlayerStart = { x: cityCellCenter(15), y: cityCellCenter(26), dir: 'up' as CityDirection };
 
 function sameCell(a: SnakeCell, b: SnakeCell) {
   return a.row === b.row && a.col === b.col;
@@ -587,49 +595,70 @@ function cityDirectionVector(direction: CityDirection) {
   return { x: 1, y: 0 };
 }
 
+function cityCellCenter(index: number) {
+  return (index + 0.5) * cityCellSize;
+}
+
+function citySnapToGrid(value: number) {
+  return cityCellCenter(clamp(Math.round(value / cityCellSize - 0.5), 0, cityGridSize - 1));
+}
+
+function cityApproach(value: number, target: number, maxDelta: number) {
+  if (Math.abs(target - value) <= maxDelta) return target;
+  return value + Math.sign(target - value) * maxDelta;
+}
+
 function createCityTiles(): CityTile[] {
   const tiles: CityTile[] = [];
-  const tile = 6.25;
+  const added = new Set<string>();
   const add = (kind: CityTileKind, col: number, row: number) => {
-    tiles.push({ id: tiles.length + 1, kind, x: col * tile, y: row * tile, size: tile });
+    if (col < 0 || row < 0 || col >= cityGridSize || row >= cityGridSize) return;
+    const key = `${kind}-${col}-${row}`;
+    if (added.has(key)) return;
+    added.add(key);
+    tiles.push({ id: tiles.length + 1, kind, x: col * cityCellSize, y: row * cityCellSize, size: cityCellSize });
+  };
+  const block = (kind: CityTileKind, col: number, row: number, width: number, height: number) => {
+    for (let y = row; y < row + height; y += 1) {
+      for (let x = col; x < col + width; x += 1) add(kind, x, y);
+    }
   };
 
-  for (let i = 0; i < 16; i += 1) {
-    if (i % 3 !== 1) {
-      add('wall', i, 3);
-      add('wall', 15 - i, 12);
-    }
-  }
-  [2, 4, 6, 9, 11, 13].forEach((row) => {
-    add('wall', 3, row);
-    add('wall', 12, row);
-  });
-  [5, 6, 9, 10].forEach((col) => {
-    add('wall', col, 6);
-    add('wall', col, 9);
-  });
-  [
-    [1, 7],
-    [2, 8],
-    [5, 12],
-    [6, 12],
-    [8, 2],
-    [9, 2],
-    [13, 5],
-    [14, 6],
-    [10, 13],
-    [11, 13],
-  ].forEach(([col, row]) => add('seaweed', col, row));
+  block('wall', 14, 28, 1, 4);
+  block('wall', 17, 28, 1, 4);
+  block('wall', 15, 31, 2, 1);
+
+  block('wall', 5, 3, 2, 4);
+  block('wall', 25, 3, 2, 4);
+  block('wall', 10, 7, 1, 5);
+  block('wall', 21, 7, 1, 5);
+  block('wall', 14, 6, 4, 1);
+  block('wall', 14, 11, 4, 1);
+  block('wall', 3, 14, 5, 1);
+  block('wall', 24, 14, 5, 1);
+  block('wall', 8, 18, 1, 5);
+  block('wall', 23, 18, 1, 5);
+  block('wall', 13, 20, 6, 1);
+  block('wall', 4, 25, 4, 1);
+  block('wall', 24, 25, 4, 1);
+
+  block('seaweed', 2, 9, 4, 3);
+  block('seaweed', 25, 9, 4, 3);
+  block('seaweed', 11, 14, 3, 3);
+  block('seaweed', 18, 14, 3, 3);
+  block('seaweed', 3, 20, 4, 3);
+  block('seaweed', 25, 20, 4, 3);
+  block('seaweed', 12, 24, 8, 2);
   return tiles;
 }
 
 function createCityEnemy(id: number): CityUnit {
   const spawns = [
-    { x: 10, y: 10, dir: 'down' as CityDirection },
-    { x: 50, y: 8, dir: 'down' as CityDirection },
-    { x: 90, y: 10, dir: 'down' as CityDirection },
-    { x: 8, y: 50, dir: 'right' as CityDirection },
-    { x: 92, y: 50, dir: 'left' as CityDirection },
+    { x: cityCellCenter(2), y: cityCellCenter(1), dir: 'down' as CityDirection },
+    { x: cityCellCenter(15), y: cityCellCenter(1), dir: 'down' as CityDirection },
+    { x: cityCellCenter(29), y: cityCellCenter(1), dir: 'down' as CityDirection },
+    { x: cityCellCenter(1), y: cityCellCenter(15), dir: 'right' as CityDirection },
+    { x: cityCellCenter(30), y: cityCellCenter(15), dir: 'left' as CityDirection },
   ];
   const spawn = spawns[Math.floor(Math.random() * spawns.length)];
   return {
@@ -640,7 +669,7 @@ function createCityEnemy(id: number): CityUnit {
     hp: Math.random() > 0.68 ? 2 : 1,
     cooldown: 850 + Math.random() * 800,
     turnTimer: 500 + Math.random() * 800,
-    speed: 0.016 + Math.random() * 0.006,
+    speed: 0.008 + Math.random() * 0.003,
   };
 }
 
@@ -658,7 +687,15 @@ function cityBlocked(x: number, y: number, size: number, tiles: CityTile[]) {
 
 function cityMoveUnit(unit: Pick<CityUnit, 'x' | 'y' | 'dir'>, dt: number, speed: number, tiles: CityTile[]) {
   const vector = cityDirectionVector(unit.dir);
-  const next = { x: unit.x + vector.x * speed * dt, y: unit.y + vector.y * speed * dt };
+  const maxDelta = speed * dt;
+  const next = { x: unit.x, y: unit.y };
+  if (vector.x !== 0) {
+    next.y = cityApproach(next.y, citySnapToGrid(next.y), maxDelta * 1.35);
+    next.x += vector.x * maxDelta;
+  } else {
+    next.x = cityApproach(next.x, citySnapToGrid(next.x), maxDelta * 1.35);
+    next.y += vector.y * maxDelta;
+  }
   if (cityBlocked(next.x, next.y, cityUnitSize, tiles)) return { ...unit, blocked: true };
   return { ...unit, ...next, blocked: false };
 }
@@ -3104,7 +3141,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
         const keyDir = keysRef.current.up ? 'up' : keysRef.current.down ? 'down' : keysRef.current.left ? 'left' : keysRef.current.right ? 'right' : null;
         if (keyDir) {
           currentPlayer.dir = keyDir;
-          const moved = cityMoveUnit(currentPlayer, dt, 0.035, tiles);
+          const moved = cityMoveUnit(currentPlayer, dt, 0.013, tiles);
           currentPlayer.x = moved.x;
           currentPlayer.y = moved.y;
         }
@@ -3115,8 +3152,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
           const allyShot: CityShot = {
             id: nextId.current++,
             side: 'ally',
-            x: currentPlayer.x + vector.x * 3.3,
-            y: currentPlayer.y + vector.y * 3.3,
+            x: currentPlayer.x + vector.x * cityCellSize * 0.62,
+            y: currentPlayer.y + vector.y * cityCellSize * 0.62,
             vx: vector.x * 0.064,
             vy: vector.y * 0.064,
             dir: currentPlayer.dir,
@@ -3167,8 +3204,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             enemyShots.push({
               id: nextId.current++,
               side: 'enemy',
-              x: nextEnemy.x + vector.x * 3,
-              y: nextEnemy.y + vector.y * 3,
+              x: nextEnemy.x + vector.x * cityCellSize * 0.62,
+              y: nextEnemy.y + vector.y * cityCellSize * 0.62,
               vx: vector.x * 0.045,
               vy: vector.y * 0.045,
               dir: nextEnemy.dir,
@@ -3186,11 +3223,11 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
         [...shotsRef.current, ...enemyShots].forEach((shot) => {
           const moved = { ...shot, x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt };
           if (moved.x < 0 || moved.x > 100 || moved.y < 0 || moved.y > 100) return;
-          const wallHit = tiles.some((tile) => tile.kind === 'wall' && cityIntersectsRect(moved.x, moved.y, 1.2, tile));
+          const wallHit = tiles.some((tile) => tile.kind === 'wall' && cityIntersectsRect(moved.x, moved.y, cityCellSize * 0.38, tile));
           if (wallHit) return;
 
           if (moved.side === 'ally') {
-            const target = nextEnemies.find((enemy) => Math.hypot(enemy.x - moved.x, enemy.y - moved.y) < cityUnitSize * 0.72);
+            const target = nextEnemies.find((enemy) => Math.hypot(enemy.x - moved.x, enemy.y - moved.y) < cityUnitSize * 0.62);
             if (target) {
               target.hp -= 1;
               if (target.hp <= 0) {
@@ -3213,7 +3250,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             }
           } else {
             const protectedPlayer = shieldUntilRef.current > time;
-            if (Math.hypot(currentPlayer.x - moved.x, currentPlayer.y - moved.y) < cityUnitSize * 0.7) {
+            if (Math.hypot(currentPlayer.x - moved.x, currentPlayer.y - moved.y) < cityUnitSize * 0.62) {
               if (!protectedPlayer) {
                 nextArmor -= 1;
                 shieldUntilRef.current = time + 900;
@@ -3222,7 +3259,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
               }
               return;
             }
-            if (cityIntersectsRect(moved.x, moved.y, 1.4, { x: cityBase.x - cityBase.size / 2, y: cityBase.y - cityBase.size / 2, size: cityBase.size })) {
+            if (cityIntersectsRect(moved.x, moved.y, cityCellSize * 0.45, { x: cityBase.x - cityBase.size / 2, y: cityBase.y - cityBase.size / 2, size: cityBase.size })) {
               nextBaseHp -= 1;
               setDialogue('冰晶主陣地被擊中，快回防。');
               return;
@@ -3233,7 +3270,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
 
         nextEnemies = nextEnemies.filter((enemy) => enemy.hp > 0);
         nextPowerups = nextPowerups.filter((powerup) => {
-          if (Math.hypot(currentPlayer.x - powerup.x, currentPlayer.y - powerup.y) >= 4.8) return true;
+          if (Math.hypot(currentPlayer.x - powerup.x, currentPlayer.y - powerup.y) >= cityCellSize * 1.08) return true;
           if (powerup.kind === 'speed') {
             rapidUntilRef.current = time + 7000;
             setRapidUntil(time + 7000);
@@ -3327,7 +3364,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
           ))}
           {enemies.map((enemy) => (
             <div className={`city-unit enemy dir-${enemy.dir} ${citySeaweedCover(enemy.x, enemy.y, tiles) ? 'hidden' : ''}`} key={enemy.id} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }}>
-              <img src={assets.mechaSquid} alt="" />
+              <img src={assets.mechaSquid[enemy.dir]} alt="" />
               <i style={{ width: `${enemy.hp * 50}%` }} />
             </div>
           ))}
