@@ -1,0 +1,36 @@
+node_modules/
+dist/
+dist-pwa/
+builds/
+android/
+*.zip
+*.apk
+
+# Keep raw source-resolution media local. GitHub Pages uses public/assets/mobile/.
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.webp
+file_*
+Screenshot_*
+Photos-*
+_incoming/
+
+# Do not publish original large asset folders.
+public/assets/*
+!public/assets/mobile/
+!public/assets/mobile/**
+!public/icons/
+!public/icons/**
+!public/.nojekyll
+
+# Allow app source images/videos in the optimized mobile asset folder.
+!public/assets/mobile/**/*.png
+!public/assets/mobile/**/*.jpg
+!public/assets/mobile/**/*.jpeg
+!public/assets/mobile/**/*.webp
+!public/assets/mobile/**/*.mp4
