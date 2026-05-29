@@ -6,7 +6,7 @@ function assetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
 }
 
-type Screen = 'title' | 'map' | 'gallery' | 'video' | 'combat' | 'victory' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower';
+type Screen = 'title' | 'map' | 'gallery' | 'video' | 'combat' | 'victory' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city';
 type Cutin = {
   title: string;
   image: string;
@@ -51,7 +51,7 @@ type VideoLeadInConfig = {
   title: string;
   src: string;
   actionLabel: string;
-  destination: 'map' | 'combat' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower';
+  destination: 'map' | 'combat' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city';
 };
 
 type MemoryCardDef = {
@@ -175,6 +175,44 @@ type TowerMonster = {
   y: number;
   drift: number;
 };
+
+type CityDirection = 'up' | 'down' | 'left' | 'right';
+type CityTileKind = 'wall' | 'seaweed';
+type CityTile = {
+  id: number;
+  kind: CityTileKind;
+  x: number;
+  y: number;
+  size: number;
+};
+type CityUnit = {
+  id: number;
+  x: number;
+  y: number;
+  dir: CityDirection;
+  hp: number;
+  cooldown: number;
+  turnTimer: number;
+  speed: number;
+};
+type CityShot = {
+  id: number;
+  side: 'ally' | 'enemy';
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  dir: CityDirection;
+};
+type CityPowerupKind = 'speed' | 'shield' | 'armor' | 'fortify';
+type CityPowerup = {
+  id: number;
+  kind: CityPowerupKind;
+  x: number;
+  y: number;
+  expiresAt: number;
+};
+type CityStatus = 'playing' | 'won' | 'lost';
 type BreakoutPowerupKind = 'split2' | 'gun' | 'split5' | 'giant' | 'grow' | 'wide' | 'narrow';
 
 type BreakoutPowerup = {
@@ -203,6 +241,7 @@ const assets = {
   napoleonWrasseHost: assetUrl('/assets/mobile/hosts/napoleon-wrasse-warrior-setting-cutout-v01.png?v=20260529'),
   morayHost: assetUrl('/assets/mobile/hosts/moray-strategist-setting-cutout-v01.png?v=20260529'),
   princeIcon: assetUrl('/assets/mobile/icons/prince-clownfish-circle-v01.png?v=20260529'),
+  mechaSquid: assetUrl('/assets/mobile/posters/mecha-squid-poster.webp?v=20260530'),
   stageBg: assetUrl('/assets/mobile/stages/north-battlefield-bg-v01.webp'),
   bossStates: {
     idle: assetUrl('/assets/mobile/bosses/giant-garbage-anemone-idle-v01.webp'),
@@ -273,6 +312,13 @@ const videoLeadIns = {
     src: assetUrl('/assets/mobile/videos/abyss-tower-intro.mp4?v=20260529'),
     actionLabel: '進入高塔',
     destination: 'tower',
+  },
+  underseaCity: {
+    eyebrow: '海底城市片頭',
+    title: '銀背突擊兵的主堡防衛戰',
+    src: assetUrl('/assets/mobile/videos/undersea-city-intro.mp4?v=20260530'),
+    actionLabel: '進入城市',
+    destination: 'city',
   },
 } satisfies Record<string, VideoLeadInConfig>;
 
@@ -521,6 +567,10 @@ const towerGoalMs = 180000;
 const towerDeathPenaltyMs = 15000;
 const towerPlayerRadius = 3.6;
 const towerPlayerStart: TowerPlayer = { x: 50, y: 48, vy: 0 };
+const cityViewSize = 50;
+const cityUnitSize = 4.5;
+const cityBase = { x: 50, y: 88, size: 9 };
+const cityPlayerStart = { x: 50, y: 76, dir: 'up' as CityDirection };
 
 function sameCell(a: SnakeCell, b: SnakeCell) {
   return a.row === b.row && a.col === b.col;
@@ -528,6 +578,93 @@ function sameCell(a: SnakeCell, b: SnakeCell) {
 
 function randomInt(min: number, max: number) {
   return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+function cityDirectionVector(direction: CityDirection) {
+  if (direction === 'up') return { x: 0, y: -1 };
+  if (direction === 'down') return { x: 0, y: 1 };
+  if (direction === 'left') return { x: -1, y: 0 };
+  return { x: 1, y: 0 };
+}
+
+function createCityTiles(): CityTile[] {
+  const tiles: CityTile[] = [];
+  const tile = 6.25;
+  const add = (kind: CityTileKind, col: number, row: number) => {
+    tiles.push({ id: tiles.length + 1, kind, x: col * tile, y: row * tile, size: tile });
+  };
+
+  for (let i = 0; i < 16; i += 1) {
+    if (i % 3 !== 1) {
+      add('wall', i, 3);
+      add('wall', 15 - i, 12);
+    }
+  }
+  [2, 4, 6, 9, 11, 13].forEach((row) => {
+    add('wall', 3, row);
+    add('wall', 12, row);
+  });
+  [5, 6, 9, 10].forEach((col) => {
+    add('wall', col, 6);
+    add('wall', col, 9);
+  });
+  [
+    [1, 7],
+    [2, 8],
+    [5, 12],
+    [6, 12],
+    [8, 2],
+    [9, 2],
+    [13, 5],
+    [14, 6],
+    [10, 13],
+    [11, 13],
+  ].forEach(([col, row]) => add('seaweed', col, row));
+  return tiles;
+}
+
+function createCityEnemy(id: number): CityUnit {
+  const spawns = [
+    { x: 10, y: 10, dir: 'down' as CityDirection },
+    { x: 50, y: 8, dir: 'down' as CityDirection },
+    { x: 90, y: 10, dir: 'down' as CityDirection },
+    { x: 8, y: 50, dir: 'right' as CityDirection },
+    { x: 92, y: 50, dir: 'left' as CityDirection },
+  ];
+  const spawn = spawns[Math.floor(Math.random() * spawns.length)];
+  return {
+    id,
+    x: spawn.x,
+    y: spawn.y,
+    dir: spawn.dir,
+    hp: Math.random() > 0.68 ? 2 : 1,
+    cooldown: 850 + Math.random() * 800,
+    turnTimer: 500 + Math.random() * 800,
+    speed: 0.016 + Math.random() * 0.006,
+  };
+}
+
+function cityIntersectsRect(x: number, y: number, size: number, rect: { x: number; y: number; size: number }) {
+  const half = size / 2;
+  return x + half > rect.x && x - half < rect.x + rect.size && y + half > rect.y && y - half < rect.y + rect.size;
+}
+
+function cityBlocked(x: number, y: number, size: number, tiles: CityTile[]) {
+  if (x < size / 2 || y < size / 2 || x > 100 - size / 2 || y > 100 - size / 2) return true;
+  const hitWall = tiles.some((tile) => tile.kind === 'wall' && cityIntersectsRect(x, y, size, tile));
+  const hitBase = cityIntersectsRect(x, y, size, { x: cityBase.x - cityBase.size / 2, y: cityBase.y - cityBase.size / 2, size: cityBase.size });
+  return hitWall || hitBase;
+}
+
+function cityMoveUnit(unit: Pick<CityUnit, 'x' | 'y' | 'dir'>, dt: number, speed: number, tiles: CityTile[]) {
+  const vector = cityDirectionVector(unit.dir);
+  const next = { x: unit.x + vector.x * speed * dt, y: unit.y + vector.y * speed * dt };
+  if (cityBlocked(next.x, next.y, cityUnitSize, tiles)) return { ...unit, blocked: true };
+  return { ...unit, ...next, blocked: false };
+}
+
+function citySeaweedCover(x: number, y: number, tiles: CityTile[]) {
+  return tiles.some((tile) => tile.kind === 'seaweed' && cityIntersectsRect(x, y, cityUnitSize * 0.85, tile));
 }
 
 function isReverseDirection(current: SnakeDirection, next: SnakeDirection) {
@@ -874,6 +1011,11 @@ export default function App() {
       setScreen('tower');
       return;
     }
+    if (videoLeadIn.destination === 'city') {
+      void startOceanBgm();
+      setScreen('city');
+      return;
+    }
     void startOceanBgm();
     setScreen('memory');
   };
@@ -893,6 +1035,7 @@ export default function App() {
             onSnowfield={() => openVideoLeadIn(videoLeadIns.snowfieldHighland)}
             onSnake={() => openVideoLeadIn(videoLeadIns.tideTribe)}
             onTower={() => openVideoLeadIn(videoLeadIns.abyssTower)}
+            onCity={() => openVideoLeadIn(videoLeadIns.underseaCity)}
           />
         )}
         {screen === 'gallery' && <CharacterGallery onBack={() => setScreen('title')} />}
@@ -902,6 +1045,7 @@ export default function App() {
         {screen === 'snowfield' && <SnowfieldGame onBack={() => setScreen('map')} />}
         {screen === 'snake' && <TideSnakeGame onBack={() => setScreen('map')} />}
         {screen === 'tower' && <AbyssTowerGame onBack={() => setScreen('map')} />}
+        {screen === 'city' && <UnderseaCityGame onBack={() => setScreen('map')} />}
         {screen === 'video' && <VideoLeadIn leadIn={videoLeadIn} onComplete={completeVideoLeadIn} />}
         {screen === 'combat' && (
           <CombatStage
@@ -946,6 +1090,7 @@ function EpisodeMap({
   onSnowfield,
   onSnake,
   onTower,
+  onCity,
 }: {
   cleared: boolean;
   onBack: () => void;
@@ -956,6 +1101,7 @@ function EpisodeMap({
   onSnowfield: () => void;
   onSnake: () => void;
   onTower: () => void;
+  onCity: () => void;
 }) {
   const nodes = [
     ['冰晶王城', 'breakout'],
@@ -965,6 +1111,7 @@ function EpisodeMap({
     ['冰雪高原', 'snowfield'],
     ['海潮部落', 'snake'],
     ['深淵高塔', 'tower'],
+    ['海底城市', 'city'],
   ];
   return (
     <section className="screen map-screen">
@@ -989,6 +1136,8 @@ function EpisodeMap({
                           ? onSnake
                           : name === '深淵高塔'
                             ? onTower
+                            : name === '海底城市'
+                              ? onCity
                         : undefined
             }
           >
@@ -1010,6 +1159,8 @@ function EpisodeMap({
                           ? '貪食蛇'
                           : state === 'tower'
                             ? '下樓'
+                            : state === 'city'
+                              ? '坦克'
                     : state === 'coming'
                       ? '劇情'
                       : '鎖定'}
@@ -2834,6 +2985,393 @@ function AbyssTowerGame({ onBack }: { onBack: () => void }) {
           <div className="tower-result">
             <strong>{status === 'won' ? '逃出高塔' : '墜入深淵'}</strong>
             <button onClick={restart}>{status === 'won' ? '再下一次' : '重新挑戰'}</button>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function UnderseaCityGame({ onBack }: { onBack: () => void }) {
+  const tiles = useMemo(() => createCityTiles(), []);
+  const arenaRef = useRef<HTMLDivElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const lastTime = useRef<number | null>(null);
+  const nextId = useRef(1);
+  const spawnTimer = useRef(0);
+  const playerRef = useRef({ ...cityPlayerStart, cooldown: 0 });
+  const enemiesRef = useRef<CityUnit[]>([]);
+  const shotsRef = useRef<CityShot[]>([]);
+  const powerupsRef = useRef<CityPowerup[]>([]);
+  const keysRef = useRef({ up: false, down: false, left: false, right: false });
+  const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
+  const [player, setPlayer] = useState({ ...cityPlayerStart });
+  const [enemies, setEnemies] = useState<CityUnit[]>([]);
+  const [shots, setShots] = useState<CityShot[]>([]);
+  const [powerups, setPowerups] = useState<CityPowerup[]>([]);
+  const [baseHp, setBaseHp] = useState(3);
+  const [armor, setArmor] = useState(3);
+  const [kills, setKills] = useState(0);
+  const [status, setStatus] = useState<CityStatus>('playing');
+  const [rapidUntil, setRapidUntil] = useState(0);
+  const [shieldUntil, setShieldUntil] = useState(0);
+  const [dialogue, setDialogue] = useState('守住雪印法師的冰晶主陣地，機甲烏賊會從城市邊緣進攻。');
+  const baseHpRef = useRef(3);
+  const armorRef = useRef(3);
+  const killsRef = useRef(0);
+  const statusRef = useRef<CityStatus>('playing');
+  const rapidUntilRef = useRef(0);
+  const shieldUntilRef = useRef(0);
+
+  const restart = useCallback(() => {
+    playerRef.current = { ...cityPlayerStart, cooldown: 0 };
+    enemiesRef.current = [];
+    shotsRef.current = [];
+    powerupsRef.current = [];
+    keysRef.current = { up: false, down: false, left: false, right: false };
+    spawnTimer.current = 0;
+    nextId.current = 1;
+    lastTime.current = null;
+    baseHpRef.current = 3;
+    armorRef.current = 3;
+    killsRef.current = 0;
+    statusRef.current = 'playing';
+    rapidUntilRef.current = 0;
+    shieldUntilRef.current = 0;
+    setPlayer({ ...cityPlayerStart });
+    setEnemies([]);
+    setShots([]);
+    setPowerups([]);
+    setBaseHp(3);
+    setArmor(3);
+    setKills(0);
+    setStatus('playing');
+    setRapidUntil(0);
+    setShieldUntil(0);
+    setDialogue('守住雪印法師的冰晶主陣地，機甲烏賊會從城市邊緣進攻。');
+  }, []);
+
+  useEffect(() => {
+    const arena = arenaRef.current;
+    if (!arena) return;
+    const updateSize = () => {
+      const rect = arena.getBoundingClientRect();
+      setArenaSize({ width: rect.width, height: rect.height });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(arena);
+    return () => observer.disconnect();
+  }, []);
+
+  const setDirectionPressed = useCallback((direction: CityDirection, pressed: boolean) => {
+    keysRef.current[direction] = pressed;
+    if (pressed) {
+      playerRef.current.dir = direction;
+      setPlayer((current) => ({ ...current, dir: direction }));
+    }
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') setDirectionPressed('up', true);
+      if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') setDirectionPressed('down', true);
+      if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') setDirectionPressed('left', true);
+      if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') setDirectionPressed('right', true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') setDirectionPressed('up', false);
+      if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') setDirectionPressed('down', false);
+      if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') setDirectionPressed('left', false);
+      if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') setDirectionPressed('right', false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [setDirectionPressed]);
+
+  useEffect(() => {
+    const tick = (time: number) => {
+      const last = lastTime.current ?? time;
+      const dt = Math.min(34, time - last);
+      lastTime.current = time;
+
+      if (statusRef.current === 'playing') {
+        const currentPlayer = { ...playerRef.current };
+        const keyDir = keysRef.current.up ? 'up' : keysRef.current.down ? 'down' : keysRef.current.left ? 'left' : keysRef.current.right ? 'right' : null;
+        if (keyDir) {
+          currentPlayer.dir = keyDir;
+          const moved = cityMoveUnit(currentPlayer, dt, 0.035, tiles);
+          currentPlayer.x = moved.x;
+          currentPlayer.y = moved.y;
+        }
+        currentPlayer.cooldown -= dt;
+        const rapid = rapidUntilRef.current > time;
+        if (currentPlayer.cooldown <= 0) {
+          const vector = cityDirectionVector(currentPlayer.dir);
+          const allyShot: CityShot = {
+            id: nextId.current++,
+            side: 'ally',
+            x: currentPlayer.x + vector.x * 3.3,
+            y: currentPlayer.y + vector.y * 3.3,
+            vx: vector.x * 0.064,
+            vy: vector.y * 0.064,
+            dir: currentPlayer.dir,
+          };
+          shotsRef.current = [
+            ...shotsRef.current,
+            allyShot,
+          ].slice(-20);
+          currentPlayer.cooldown = rapid ? 280 : 520;
+        }
+
+        spawnTimer.current += dt;
+        let nextEnemies = enemiesRef.current.map((enemy) => ({ ...enemy }));
+        if (spawnTimer.current >= 1550 && nextEnemies.length < 7 && killsRef.current + nextEnemies.length < 20) {
+          spawnTimer.current = 0;
+          nextEnemies.push(createCityEnemy(nextId.current++));
+          setDialogue('機甲烏賊從城市邊緣潛入。利用牆面擋線，海草可以藏身。');
+        }
+
+        const enemyShots: CityShot[] = [];
+        nextEnemies = nextEnemies.map((enemy) => {
+          const nextEnemy = { ...enemy };
+          nextEnemy.turnTimer -= dt;
+          const toBaseX = cityBase.x - nextEnemy.x;
+          const toBaseY = cityBase.y - nextEnemy.y;
+          if (nextEnemy.turnTimer <= 0) {
+            nextEnemy.turnTimer = 420 + Math.random() * 900;
+            if (Math.random() < 0.7) {
+              nextEnemy.dir = Math.abs(toBaseX) > Math.abs(toBaseY) ? (toBaseX > 0 ? 'right' : 'left') : toBaseY > 0 ? 'down' : 'up';
+            } else {
+              nextEnemy.dir = (['up', 'down', 'left', 'right'] as CityDirection[])[Math.floor(Math.random() * 4)];
+            }
+          }
+          const moved = cityMoveUnit(nextEnemy, dt, nextEnemy.speed, tiles);
+          if (moved.blocked) {
+            nextEnemy.dir = Math.abs(toBaseX) > Math.abs(toBaseY) ? (toBaseY > 0 ? 'down' : 'up') : toBaseX > 0 ? 'right' : 'left';
+          } else {
+            nextEnemy.x = moved.x;
+            nextEnemy.y = moved.y;
+          }
+          nextEnemy.cooldown -= dt;
+          if (nextEnemy.cooldown <= 0) {
+            const aimAtBase = Math.random() < 0.62;
+            if (aimAtBase) {
+              nextEnemy.dir = Math.abs(toBaseX) > Math.abs(toBaseY) ? (toBaseX > 0 ? 'right' : 'left') : toBaseY > 0 ? 'down' : 'up';
+            }
+            const vector = cityDirectionVector(nextEnemy.dir);
+            enemyShots.push({
+              id: nextId.current++,
+              side: 'enemy',
+              x: nextEnemy.x + vector.x * 3,
+              y: nextEnemy.y + vector.y * 3,
+              vx: vector.x * 0.045,
+              vy: vector.y * 0.045,
+              dir: nextEnemy.dir,
+            });
+            nextEnemy.cooldown = 1050 + Math.random() * 700;
+          }
+          return nextEnemy;
+        });
+
+        let nextArmor = armorRef.current;
+        let nextBaseHp = baseHpRef.current;
+        let nextKills = killsRef.current;
+        let nextPowerups = powerupsRef.current.filter((powerup) => powerup.expiresAt > time);
+        const nextShots: CityShot[] = [];
+        [...shotsRef.current, ...enemyShots].forEach((shot) => {
+          const moved = { ...shot, x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt };
+          if (moved.x < 0 || moved.x > 100 || moved.y < 0 || moved.y > 100) return;
+          const wallHit = tiles.some((tile) => tile.kind === 'wall' && cityIntersectsRect(moved.x, moved.y, 1.2, tile));
+          if (wallHit) return;
+
+          if (moved.side === 'ally') {
+            const target = nextEnemies.find((enemy) => Math.hypot(enemy.x - moved.x, enemy.y - moved.y) < cityUnitSize * 0.72);
+            if (target) {
+              target.hp -= 1;
+              if (target.hp <= 0) {
+                nextKills += 1;
+                if (Math.random() < 0.28) {
+                  const kinds: CityPowerupKind[] = ['speed', 'shield', 'armor', 'fortify'];
+                  nextPowerups = [
+                    ...nextPowerups,
+                    {
+                      id: nextId.current++,
+                      kind: kinds[Math.floor(Math.random() * kinds.length)],
+                      x: target.x,
+                      y: target.y,
+                      expiresAt: time + 9000,
+                    },
+                  ].slice(-4);
+                }
+              }
+              return;
+            }
+          } else {
+            const protectedPlayer = shieldUntilRef.current > time;
+            if (Math.hypot(currentPlayer.x - moved.x, currentPlayer.y - moved.y) < cityUnitSize * 0.7) {
+              if (!protectedPlayer) {
+                nextArmor -= 1;
+                shieldUntilRef.current = time + 900;
+                setShieldUntil(time + 900);
+                setDialogue('銀背突擊兵中彈，裝甲下降。');
+              }
+              return;
+            }
+            if (cityIntersectsRect(moved.x, moved.y, 1.4, { x: cityBase.x - cityBase.size / 2, y: cityBase.y - cityBase.size / 2, size: cityBase.size })) {
+              nextBaseHp -= 1;
+              setDialogue('冰晶主陣地被擊中，快回防。');
+              return;
+            }
+          }
+          nextShots.push(moved);
+        });
+
+        nextEnemies = nextEnemies.filter((enemy) => enemy.hp > 0);
+        nextPowerups = nextPowerups.filter((powerup) => {
+          if (Math.hypot(currentPlayer.x - powerup.x, currentPlayer.y - powerup.y) >= 4.8) return true;
+          if (powerup.kind === 'speed') {
+            rapidUntilRef.current = time + 7000;
+            setRapidUntil(time + 7000);
+            setDialogue('攻速核心啟動，短時間火力提升。');
+          }
+          if (powerup.kind === 'shield') {
+            shieldUntilRef.current = time + 6000;
+            setShieldUntil(time + 6000);
+            setDialogue('海光護盾展開，短時間無敵。');
+          }
+          if (powerup.kind === 'armor') {
+            nextArmor = Math.min(5, nextArmor + 1);
+            setDialogue('裝甲補強，銀背突擊兵撐住了。');
+          }
+          if (powerup.kind === 'fortify') {
+            nextBaseHp = Math.min(5, nextBaseHp + 1);
+            setDialogue('冰晶主堡加固，防線多撐一層。');
+          }
+          return false;
+        });
+
+        playerRef.current = currentPlayer;
+        enemiesRef.current = nextEnemies;
+        shotsRef.current = nextShots.slice(-36);
+        powerupsRef.current = nextPowerups;
+        armorRef.current = nextArmor;
+        baseHpRef.current = nextBaseHp;
+        killsRef.current = nextKills;
+        setPlayer({ x: currentPlayer.x, y: currentPlayer.y, dir: currentPlayer.dir });
+        setEnemies(nextEnemies);
+        setShots(shotsRef.current);
+        setPowerups(nextPowerups);
+        setArmor(nextArmor);
+        setBaseHp(nextBaseHp);
+        setKills(nextKills);
+
+        if (nextBaseHp <= 0 || nextArmor <= 0) {
+          statusRef.current = 'lost';
+          setStatus('lost');
+          setDialogue(nextBaseHp <= 0 ? '冰晶主陣地失守，海底城市防線崩開。' : '銀背突擊兵裝甲破裂，防衛失敗。');
+        } else if (nextKills >= 20) {
+          statusRef.current = 'won';
+          setStatus('won');
+          setDialogue('機甲烏賊部隊撤退，海底城市暫時守住了。');
+        }
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [tiles]);
+
+  const camera = {
+    x: clamp(player.x - cityViewSize / 2, 0, 100 - cityViewSize),
+    y: clamp(player.y - cityViewSize / 2, 0, 100 - cityViewSize),
+  };
+  const worldTransform = {
+    transform: `translate(${-camera.x * (arenaSize.width / cityViewSize)}px, ${-camera.y * (arenaSize.height / cityViewSize)}px)`,
+  };
+  const playerHidden = citySeaweedCover(player.x, player.y, tiles);
+  const shielded = shieldUntil > performance.now();
+  const rapid = rapidUntil > performance.now();
+
+  return (
+    <section className="screen city-screen">
+      <Header
+        title="海底城市"
+        onBack={onBack}
+        action={
+          <button onClick={restart} aria-label="重新開始">
+            <RotateCcw size={20} />
+          </button>
+        }
+      />
+      <div className="city-dialogue">
+        <p>{dialogue}</p>
+      </div>
+      <div className="city-arena" ref={arenaRef}>
+        <div className="city-world" style={worldTransform}>
+          {tiles.map((tile) => (
+            <span className={`city-tile ${tile.kind}`} key={tile.id} style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.size}%`, height: `${tile.size}%` }} />
+          ))}
+          <div className="city-base" style={{ left: `${cityBase.x}%`, top: `${cityBase.y}%`, width: `${cityBase.size}%`, height: `${cityBase.size}%`, ['--base-hp' as string]: baseHp }}>
+            <img src={assets.snowSealHost} alt="" />
+          </div>
+          {powerups.map((powerup) => (
+            <img className={`city-powerup ${powerup.kind}`} src={assets.pickup} alt="" key={powerup.id} style={{ left: `${powerup.x}%`, top: `${powerup.y}%` }} />
+          ))}
+          {enemies.map((enemy) => (
+            <div className={`city-unit enemy dir-${enemy.dir} ${citySeaweedCover(enemy.x, enemy.y, tiles) ? 'hidden' : ''}`} key={enemy.id} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }}>
+              <img src={assets.mechaSquid} alt="" />
+              <i style={{ width: `${enemy.hp * 50}%` }} />
+            </div>
+          ))}
+          <div className={`city-unit player dir-${player.dir} ${playerHidden ? 'hidden' : ''} ${shielded ? 'shielded' : ''} ${rapid ? 'rapid' : ''}`} style={{ left: `${player.x}%`, top: `${player.y}%` }}>
+            <img src={assets.silverbackHost} alt="" />
+          </div>
+          {shots.map((shot) => (
+            <span className={`city-shot ${shot.side} dir-${shot.dir}`} key={shot.id} style={{ left: `${shot.x}%`, top: `${shot.y}%` }} />
+          ))}
+          {tiles.filter((tile) => tile.kind === 'seaweed').map((tile) => (
+            <span className="city-seaweed-cover" key={`cover-${tile.id}`} style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.size}%`, height: `${tile.size}%` }} />
+          ))}
+        </div>
+        <div className="city-hud">
+          <span>主堡 {baseHp}/5</span>
+          <span>裝甲 {armor}/5</span>
+          <span>擊破 {kills}/20</span>
+        </div>
+        <div className="city-minimap">
+          <span className="view" style={{ left: `${camera.x}%`, top: `${camera.y}%`, width: `${cityViewSize}%`, height: `${cityViewSize}%` }} />
+          <span className="base" style={{ left: `${cityBase.x}%`, top: `${cityBase.y}%` }} />
+          <span className="player" style={{ left: `${player.x}%`, top: `${player.y}%` }} />
+          {enemies.map((enemy) => (
+            <span className="enemy" key={`mini-${enemy.id}`} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }} />
+          ))}
+        </div>
+        <div className="city-controls" aria-label="方向控制">
+          <button onPointerDown={() => setDirectionPressed('up', true)} onPointerUp={() => setDirectionPressed('up', false)} onPointerCancel={() => setDirectionPressed('up', false)} aria-label="向上">
+            <ChevronUp size={20} />
+          </button>
+          <button onPointerDown={() => setDirectionPressed('left', true)} onPointerUp={() => setDirectionPressed('left', false)} onPointerCancel={() => setDirectionPressed('left', false)} aria-label="向左">
+            <ChevronLeft size={20} />
+          </button>
+          <button onPointerDown={() => setDirectionPressed('right', true)} onPointerUp={() => setDirectionPressed('right', false)} onPointerCancel={() => setDirectionPressed('right', false)} aria-label="向右">
+            <ChevronRight size={20} />
+          </button>
+          <button onPointerDown={() => setDirectionPressed('down', true)} onPointerUp={() => setDirectionPressed('down', false)} onPointerCancel={() => setDirectionPressed('down', false)} aria-label="向下">
+            <ChevronDown size={20} />
+          </button>
+        </div>
+        {status !== 'playing' && (
+          <div className="city-result">
+            <strong>{status === 'won' ? '城市守住' : '防線失守'}</strong>
+            <button onClick={restart}>{status === 'won' ? '再守一次' : '重新布防'}</button>
           </div>
         )}
       </div>

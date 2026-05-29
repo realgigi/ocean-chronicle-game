@@ -365,6 +365,10 @@ button:disabled {
   background: linear-gradient(135deg, rgba(65, 49, 87, 0.92), rgba(17, 91, 109, 0.86));
 }
 
+.map-node.city {
+  background: linear-gradient(135deg, rgba(38, 100, 113, 0.92), rgba(109, 63, 132, 0.86));
+}
+
 .map-node.cleared {
   background: linear-gradient(135deg, rgba(44, 146, 107, 0.86), rgba(32, 94, 120, 0.84));
 }
@@ -2326,6 +2330,442 @@ button:disabled {
   }
 }
 
+.city-screen {
+  width: 100%;
+  max-width: 100%;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  background:
+    radial-gradient(circle at 52% 0%, rgba(104, 219, 233, 0.22), transparent 30%),
+    linear-gradient(180deg, #061827 0%, #0b2d34 43%, #050d17 100%);
+}
+
+.city-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(223, 188, 94, 0.12), transparent 22%),
+    radial-gradient(circle at 82% 68%, rgba(179, 78, 188, 0.13), transparent 24%),
+    repeating-linear-gradient(90deg, rgba(216, 247, 255, 0.045) 0 1px, transparent 1px 54px),
+    repeating-linear-gradient(0deg, rgba(216, 247, 255, 0.035) 0 1px, transparent 1px 54px);
+  pointer-events: none;
+}
+
+.city-dialogue,
+.city-arena {
+  position: relative;
+  z-index: 1;
+}
+
+.city-dialogue {
+  min-height: 50px;
+  margin: 0 14px 6px;
+  display: grid;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(228, 244, 247, 0.94);
+  color: #102232;
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.74);
+}
+
+.city-dialogue p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.city-arena {
+  min-width: 0;
+  min-height: 0;
+  margin: 0 14px 14px;
+  overflow: hidden;
+  touch-action: none;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 50% 52%, rgba(77, 189, 187, 0.18), transparent 28%),
+    linear-gradient(180deg, rgba(10, 43, 52, 0.94), rgba(3, 10, 17, 0.98));
+  box-shadow:
+    inset 0 0 0 1px rgba(178, 232, 237, 0.24),
+    inset 0 -42px 90px rgba(34, 18, 58, 0.22);
+}
+
+.city-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 200%;
+  height: 200%;
+  will-change: transform;
+  background:
+    radial-gradient(circle at 22% 18%, rgba(91, 210, 207, 0.12), transparent 18%),
+    radial-gradient(circle at 74% 76%, rgba(227, 183, 86, 0.12), transparent 22%),
+    repeating-linear-gradient(90deg, rgba(210, 244, 248, 0.055) 0 1px, transparent 1px 6.25%),
+    repeating-linear-gradient(0deg, rgba(210, 244, 248, 0.045) 0 1px, transparent 1px 6.25%);
+}
+
+.city-tile {
+  position: absolute;
+  z-index: 2;
+  border-radius: 5px;
+}
+
+.city-tile.wall {
+  background:
+    linear-gradient(135deg, rgba(168, 218, 219, 0.2), transparent 42%),
+    linear-gradient(180deg, rgba(63, 105, 115, 0.96), rgba(27, 51, 65, 0.98));
+  box-shadow:
+    inset 0 0 0 1px rgba(223, 255, 253, 0.18),
+    inset 0 -8px 16px rgba(0, 0, 0, 0.26),
+    0 5px 12px rgba(0, 0, 0, 0.22);
+}
+
+.city-tile.seaweed {
+  z-index: 3;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(158, 232, 167, 0.35), transparent 42%),
+    repeating-linear-gradient(80deg, rgba(88, 204, 145, 0.55) 0 5px, rgba(19, 91, 85, 0.46) 6px 10px);
+  opacity: 0.55;
+  box-shadow: inset 0 0 0 1px rgba(156, 242, 186, 0.16);
+}
+
+.city-base,
+.city-unit,
+.city-shot,
+.city-powerup,
+.city-seaweed-cover {
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+
+.city-base {
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(242, 255, 255, 0.84), rgba(112, 221, 236, 0.28) 48%, rgba(9, 31, 44, 0.9) 70%),
+    conic-gradient(from 45deg, rgba(194, 250, 255, 0.88), rgba(255, 238, 163, 0.62), rgba(121, 211, 230, 0.78), rgba(194, 250, 255, 0.88));
+  box-shadow:
+    0 0 0 3px rgba(205, 247, 255, 0.3),
+    0 0 22px rgba(121, 222, 240, 0.52),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.58);
+}
+
+.city-base::after {
+  content: "";
+  position: absolute;
+  inset: -9px;
+  border-radius: 11px;
+  border: 2px solid rgba(184, 244, 255, 0.36);
+  box-shadow: inset 0 0 16px rgba(166, 236, 248, 0.22);
+}
+
+.city-base img {
+  position: relative;
+  z-index: 1;
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.46));
+}
+
+.city-unit {
+  z-index: 8;
+  width: 4.8%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.city-unit.player {
+  background: radial-gradient(circle, rgba(245, 255, 255, 0.74), rgba(89, 183, 205, 0.5) 58%, transparent 72%);
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.36));
+}
+
+.city-unit.enemy {
+  background: radial-gradient(circle, rgba(245, 226, 255, 0.62), rgba(104, 52, 132, 0.38) 58%, transparent 72%);
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.34));
+}
+
+.city-unit img {
+  width: 130%;
+  height: 130%;
+  object-fit: contain;
+  transition: transform 120ms linear, opacity 120ms linear, filter 120ms linear;
+}
+
+.city-unit.dir-up img {
+  transform: rotate(0deg);
+}
+
+.city-unit.dir-right img {
+  transform: rotate(90deg);
+}
+
+.city-unit.dir-down img {
+  transform: rotate(180deg);
+}
+
+.city-unit.dir-left img {
+  transform: rotate(-90deg);
+}
+
+.city-unit.hidden img {
+  opacity: 0.08;
+  filter: blur(0.5px) saturate(0.7);
+}
+
+.city-unit.shielded {
+  box-shadow:
+    0 0 0 3px rgba(255, 235, 132, 0.48),
+    0 0 22px rgba(122, 232, 244, 0.62);
+}
+
+.city-unit.rapid img {
+  filter:
+    drop-shadow(0 0 9px rgba(255, 235, 115, 0.78))
+    drop-shadow(0 0 15px rgba(119, 231, 245, 0.58));
+}
+
+.city-unit i {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: -5px;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ff7ca8, #ffe79c);
+  box-shadow: 0 0 8px rgba(255, 159, 203, 0.42);
+}
+
+.city-shot {
+  z-index: 12;
+  width: 1.12%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 28%, #fff 0 18%, #ffe585 19% 45%, rgba(81, 224, 236, 0.78) 46% 72%, transparent 73%);
+  box-shadow:
+    0 0 0 2px rgba(255, 238, 150, 0.16),
+    0 0 10px rgba(111, 234, 243, 0.72);
+}
+
+.city-shot.enemy {
+  background:
+    radial-gradient(circle at 34% 28%, #fff 0 16%, #f2a1ff 17% 45%, rgba(93, 57, 178, 0.78) 46% 72%, transparent 73%);
+  box-shadow:
+    0 0 0 2px rgba(242, 161, 255, 0.14),
+    0 0 10px rgba(210, 94, 255, 0.72);
+}
+
+.city-powerup {
+  z-index: 13;
+  width: 3.3%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  object-fit: contain;
+  pointer-events: none;
+  animation: cityPowerup 1.1s ease-in-out infinite;
+}
+
+.city-powerup.speed {
+  filter:
+    hue-rotate(170deg)
+    drop-shadow(0 0 10px rgba(255, 224, 92, 0.8));
+}
+
+.city-powerup.shield {
+  filter:
+    hue-rotate(120deg)
+    drop-shadow(0 0 11px rgba(117, 234, 245, 0.86));
+}
+
+.city-powerup.armor,
+.city-powerup.fortify {
+  filter:
+    hue-rotate(310deg)
+    drop-shadow(0 0 11px rgba(191, 141, 255, 0.74));
+}
+
+.city-seaweed-cover {
+  z-index: 10;
+  border-radius: 7px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 36% 34%, rgba(146, 230, 154, 0.28), transparent 36%),
+    repeating-linear-gradient(74deg, rgba(98, 218, 150, 0.74) 0 5px, rgba(6, 72, 68, 0.68) 6px 12px);
+  opacity: 0.76;
+  filter: blur(0.1px);
+}
+
+.city-hud {
+  position: absolute;
+  z-index: 18;
+  top: 8px;
+  left: 82px;
+  right: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  pointer-events: none;
+}
+
+.city-hud span {
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 4px 5px;
+  border-radius: 8px;
+  background: rgba(4, 18, 30, 0.72);
+  color: #dcf8ff;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px rgba(181, 235, 243, 0.18);
+}
+
+.city-minimap {
+  position: absolute;
+  z-index: 20;
+  left: 8px;
+  top: 8px;
+  width: 66px;
+  height: 66px;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 72%, rgba(255, 221, 113, 0.14), transparent 22%),
+    rgba(3, 12, 22, 0.78);
+  box-shadow:
+    inset 0 0 0 1px rgba(180, 237, 244, 0.28),
+    0 8px 16px rgba(0, 0, 0, 0.22);
+}
+
+.city-minimap span {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.city-minimap .view {
+  transform: none;
+  width: auto;
+  height: auto;
+  border: 1px solid rgba(255, 237, 150, 0.76);
+  border-radius: 3px;
+  background: rgba(255, 237, 150, 0.08);
+}
+
+.city-minimap .base {
+  background: #ffe485;
+  box-shadow: 0 0 8px rgba(255, 230, 142, 0.82);
+}
+
+.city-minimap .player {
+  background: #85f5ff;
+  box-shadow: 0 0 8px rgba(133, 245, 255, 0.82);
+}
+
+.city-minimap .enemy {
+  background: #f18dff;
+  box-shadow: 0 0 8px rgba(241, 141, 255, 0.7);
+}
+
+.city-controls {
+  position: absolute;
+  z-index: 22;
+  right: 11px;
+  bottom: 11px;
+  display: grid;
+  grid-template-columns: repeat(3, 34px);
+  grid-template-rows: repeat(3, 34px);
+  gap: 4px;
+  touch-action: none;
+  user-select: none;
+}
+
+.city-controls button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 8px;
+  color: #eafcff;
+  background: rgba(5, 26, 41, 0.78);
+  box-shadow:
+    inset 0 0 0 1px rgba(178, 232, 244, 0.24),
+    0 8px 14px rgba(0, 0, 0, 0.22);
+}
+
+.city-controls button:first-child {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.city-controls button:nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.city-controls button:nth-child(3) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.city-controls button:nth-child(4) {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.city-result {
+  position: absolute;
+  z-index: 28;
+  left: 34px;
+  right: 34px;
+  bottom: 42px;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(4, 15, 26, 0.92);
+  box-shadow:
+    0 20px 42px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(182, 236, 243, 0.28);
+}
+
+.city-result strong {
+  font-size: 20px;
+}
+
+.city-result button {
+  min-width: 118px;
+  min-height: 42px;
+  padding: 0 16px;
+  background: linear-gradient(180deg, rgba(255, 234, 141, 0.98), rgba(111, 217, 231, 0.96));
+  color: #162838;
+}
+
+@keyframes cityPowerup {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+
+  50% {
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+}
+
 .combat-screen,
 .arena {
   touch-action: none;
@@ -2884,5 +3324,47 @@ button:disabled {
 
   .ice-paddle {
     height: 23px;
+  }
+
+  .city-dialogue {
+    min-height: 46px;
+    margin-right: 10px;
+    margin-left: 10px;
+    padding: 6px 10px;
+  }
+
+  .city-dialogue p {
+    font-size: 13px;
+  }
+
+  .city-arena {
+    margin-right: 10px;
+    margin-left: 10px;
+  }
+
+  .city-hud {
+    left: 76px;
+    gap: 4px;
+  }
+
+  .city-hud span {
+    padding-right: 3px;
+    padding-left: 3px;
+    font-size: 10px;
+  }
+
+  .city-minimap {
+    width: 62px;
+    height: 62px;
+  }
+
+  .city-controls {
+    grid-template-columns: repeat(3, 32px);
+    grid-template-rows: repeat(3, 32px);
+  }
+
+  .city-controls button {
+    width: 32px;
+    height: 32px;
   }
 }
