@@ -597,6 +597,7 @@ const cityViewWidth = cityCellSize * cityViewCols;
 const cityViewHeight = cityCellSize * cityViewRows;
 const cityUnitSize = cityCellSize * 0.74;
 const cityUnitVisualSize = cityCellSize * 0.94;
+const cityPlayerStepDelayMs = 170;
 const cityBase = { x: cityCellCenter(15.5), y: cityCellCenter(29.5), size: cityCellSize * 2 };
 const cityPlayerStart = { x: cityCellCenter(15), y: cityCellCenter(26), dir: 'up' as CityDirection };
 
@@ -3112,6 +3113,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const shotsRef = useRef<CityShot[]>([]);
   const powerupsRef = useRef<CityPowerup[]>([]);
   const keysRef = useRef({ fire: false });
+  const heldDirectionRef = useRef<CityDirection | null>(null);
+  const nextPlayerStepAt = useRef(0);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
   const [tiles, setTiles] = useState<CityTile[]>(startingTiles);
@@ -3125,7 +3128,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const [status, setStatus] = useState<CityStatus>('playing');
   const [rapidUntil, setRapidUntil] = useState(0);
   const [shieldUntil, setShieldUntil] = useState(0);
-  const [dialogue, setDialogue] = useState('滑動戰場或按方向鍵推進一格，右側開炮。守住冰晶主堡。');
+  const [dialogue, setDialogue] = useState('點一下前進一格，按住方向可連續推進；右側開炮。');
   const baseHpRef = useRef(3);
   const armorRef = useRef(3);
   const killsRef = useRef(0);
@@ -3141,6 +3144,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     shotsRef.current = [];
     powerupsRef.current = [];
     keysRef.current = { fire: false };
+    heldDirectionRef.current = null;
+    nextPlayerStepAt.current = 0;
     spawnTimer.current = 0;
     nextId.current = 1;
     lastTime.current = null;
@@ -3161,7 +3166,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     setStatus('playing');
     setRapidUntil(0);
     setShieldUntil(0);
-    setDialogue('滑動戰場或按方向鍵推進一格，右側開炮。守住冰晶主堡。');
+    setDialogue('點一下前進一格，按住方向可連續推進；右側開炮。');
   }, []);
 
   useEffect(() => {
@@ -3188,6 +3193,14 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     setPlayer({ x: currentPlayer.x, y: currentPlayer.y, dir: currentPlayer.dir });
   }, []);
 
+  const holdPlayerDirection = useCallback((direction: CityDirection | null, startTime = performance.now()) => {
+    heldDirectionRef.current = direction;
+    if (direction) {
+      movePlayerStep(direction);
+      nextPlayerStepAt.current = startTime + cityPlayerStepDelayMs;
+    }
+  }, [movePlayerStep]);
+
   const setFirePressed = useCallback((pressed: boolean) => {
     keysRef.current.fire = pressed;
   }, []);
@@ -3203,22 +3216,17 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   }, [movePlayerStep]);
 
   useEffect(() => {
+    const directionFromKey = (event: KeyboardEvent): CityDirection | null => {
+      if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') return 'up';
+      if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') return 'down';
+      if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') return 'left';
+      if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') return 'right';
+      return null;
+    };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat) return;
-      if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') {
-        movePlayerStep('up');
-        event.preventDefault();
-      }
-      if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') {
-        movePlayerStep('down');
-        event.preventDefault();
-      }
-      if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') {
-        movePlayerStep('left');
-        event.preventDefault();
-      }
-      if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') {
-        movePlayerStep('right');
+      const direction = directionFromKey(event);
+      if (direction && heldDirectionRef.current !== direction) {
+        holdPlayerDirection(direction);
         event.preventDefault();
       }
       if (event.key === ' ' || event.key.toLowerCase() === 'j' || event.key.toLowerCase() === 'k') {
@@ -3227,6 +3235,11 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
       }
     };
     const onKeyUp = (event: KeyboardEvent) => {
+      const direction = directionFromKey(event);
+      if (direction && heldDirectionRef.current === direction) {
+        holdPlayerDirection(null);
+        event.preventDefault();
+      }
       if (event.key === ' ' || event.key.toLowerCase() === 'j' || event.key.toLowerCase() === 'k') {
         setFirePressed(false);
         event.preventDefault();
@@ -3238,7 +3251,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [movePlayerStep, setFirePressed]);
+  }, [holdPlayerDirection, setFirePressed]);
 
   useEffect(() => {
     const tick = (time: number) => {
@@ -3247,6 +3260,11 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
       lastTime.current = time;
 
       if (statusRef.current === 'playing') {
+        const heldDirection = heldDirectionRef.current;
+        if (heldDirection && time >= nextPlayerStepAt.current) {
+          movePlayerStep(heldDirection);
+          nextPlayerStepAt.current = time + cityPlayerStepDelayMs;
+        }
         const currentTiles = tilesRef.current;
         const currentPlayer = { ...playerRef.current };
         currentPlayer.cooldown -= dt;
@@ -3340,9 +3358,23 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
         let nextTiles = currentTiles;
         let tilesChanged = false;
         const nextShots: CityShot[] = [];
-        [...shotsRef.current, ...enemyShots].forEach((shot) => {
-          const moved = { ...shot, x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt };
-          if (moved.x < 0 || moved.x > 100 || moved.y < 0 || moved.y > 100) return;
+        const movedShots = [...shotsRef.current, ...enemyShots]
+          .map((shot) => ({ ...shot, x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt }))
+          .filter((shot) => shot.x >= 0 && shot.x <= 100 && shot.y >= 0 && shot.y <= 100);
+        const canceledShots = new Set<number>();
+        for (let i = 0; i < movedShots.length; i += 1) {
+          if (canceledShots.has(movedShots[i].id)) continue;
+          for (let j = i + 1; j < movedShots.length; j += 1) {
+            if (canceledShots.has(movedShots[j].id) || movedShots[i].side === movedShots[j].side) continue;
+            if (Math.hypot(movedShots[i].x - movedShots[j].x, movedShots[i].y - movedShots[j].y) < cityCellSize * 0.58) {
+              canceledShots.add(movedShots[i].id);
+              canceledShots.add(movedShots[j].id);
+              break;
+            }
+          }
+        }
+        movedShots.forEach((moved) => {
+          if (canceledShots.has(moved.id)) return;
           const wallHitIndex = nextTiles.findIndex((tile) => cityTileBlocks(tile) && cityIntersectsRect(moved.x, moved.y, cityCellSize * 0.38, tile));
           if (wallHitIndex >= 0) {
             const tile = nextTiles[wallHitIndex];
@@ -3461,7 +3493,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, []);
+  }, [movePlayerStep]);
 
   const cityCellPx = Math.max(18, Math.floor(Math.min((arenaSize.width || 360) / cityViewCols, (arenaSize.height || 520) / cityViewRows)));
   const cityViewportWidthPx = cityCellPx * cityViewCols;
@@ -3559,16 +3591,16 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             ))}
           </div>
           <div className="city-controls" aria-label="方向控制">
-            <button onPointerDown={() => movePlayerStep('up')} aria-label="向上">
+            <button onPointerDown={() => holdPlayerDirection('up')} onPointerUp={() => holdPlayerDirection(null)} onPointerCancel={() => holdPlayerDirection(null)} onPointerLeave={() => holdPlayerDirection(null)} aria-label="向上">
               <ChevronUp size={20} />
             </button>
-            <button onPointerDown={() => movePlayerStep('left')} aria-label="向左">
+            <button onPointerDown={() => holdPlayerDirection('left')} onPointerUp={() => holdPlayerDirection(null)} onPointerCancel={() => holdPlayerDirection(null)} onPointerLeave={() => holdPlayerDirection(null)} aria-label="向左">
               <ChevronLeft size={20} />
             </button>
-            <button onPointerDown={() => movePlayerStep('right')} aria-label="向右">
+            <button onPointerDown={() => holdPlayerDirection('right')} onPointerUp={() => holdPlayerDirection(null)} onPointerCancel={() => holdPlayerDirection(null)} onPointerLeave={() => holdPlayerDirection(null)} aria-label="向右">
               <ChevronRight size={20} />
             </button>
-            <button onPointerDown={() => movePlayerStep('down')} aria-label="向下">
+            <button onPointerDown={() => holdPlayerDirection('down')} onPointerUp={() => holdPlayerDirection(null)} onPointerCancel={() => holdPlayerDirection(null)} onPointerLeave={() => holdPlayerDirection(null)} aria-label="向下">
               <ChevronDown size={20} />
             </button>
           </div>
