@@ -194,7 +194,8 @@ type CityUnit = {
   hp: number;
   cooldown: number;
   turnTimer: number;
-  speed: number;
+  moveTimer: number;
+  stepDelay: number;
 };
 type CityShot = {
   id: number;
@@ -618,6 +619,10 @@ function cityCellCenter(index: number) {
   return (index + 0.5) * cityCellSize;
 }
 
+function cityCoordToCell(value: number) {
+  return clamp(Math.round(value / cityCellSize - 0.5), 0, cityGridSize - 1);
+}
+
 function citySnapToGrid(value: number) {
   return cityCellCenter(clamp(Math.round(value / cityCellSize - 0.5), 0, cityGridSize - 1));
 }
@@ -700,7 +705,8 @@ function createCityEnemy(id: number): CityUnit {
     hp: Math.random() > 0.68 ? 2 : 1,
     cooldown: 850 + Math.random() * 800,
     turnTimer: 500 + Math.random() * 800,
-    speed: 0.008 + Math.random() * 0.003,
+    moveTimer: 260 + Math.random() * 260,
+    stepDelay: 420 + Math.random() * 160,
   };
 }
 
@@ -724,6 +730,26 @@ function cityBlocked(x: number, y: number, size: number, tiles: CityTile[]) {
   return hitWall || hitBase;
 }
 
+function citySameGridPosition(a: Pick<CityUnit, 'x' | 'y'>, b: Pick<CityUnit, 'x' | 'y'>) {
+  return cityCoordToCell(a.x) === cityCoordToCell(b.x) && cityCoordToCell(a.y) === cityCoordToCell(b.y);
+}
+
+function cityStepPosition(unit: Pick<CityUnit, 'x' | 'y'>, direction: CityDirection) {
+  const vector = cityDirectionVector(direction);
+  return {
+    x: cityCellCenter(clamp(cityCoordToCell(unit.x) + vector.x, 0, cityGridSize - 1)),
+    y: cityCellCenter(clamp(cityCoordToCell(unit.y) + vector.y, 0, cityGridSize - 1)),
+  };
+}
+
+function cityOccupied(x: number, y: number, occupants: Pick<CityUnit, 'x' | 'y'>[]) {
+  return occupants.some((unit) => citySameGridPosition({ x, y }, unit));
+}
+
+function cityCanOccupy(x: number, y: number, tiles: CityTile[], occupants: Pick<CityUnit, 'x' | 'y'>[]) {
+  return !cityBlocked(x, y, cityUnitSize, tiles) && !cityOccupied(x, y, occupants);
+}
+
 function cityMoveUnit(unit: Pick<CityUnit, 'x' | 'y' | 'dir'>, dt: number, speed: number, tiles: CityTile[]) {
   const vector = cityDirectionVector(unit.dir);
   const maxDelta = speed * dt;
@@ -745,7 +771,7 @@ function citySeaweedCover(x: number, y: number, tiles: CityTile[]) {
 
 function cityTerrainSpeed(x: number, y: number, tiles: CityTile[]) {
   const inCurrent = tiles.some((tile) => tile.kind === 'current' && cityIntersectsRect(x, y, cityUnitSize * 0.8, tile));
-  return inCurrent ? 0.74 : 1;
+  return inCurrent ? 1.35 : 1;
 }
 
 function isReverseDirection(current: SnakeDirection, next: SnakeDirection) {
@@ -3085,7 +3111,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const enemiesRef = useRef<CityUnit[]>([]);
   const shotsRef = useRef<CityShot[]>([]);
   const powerupsRef = useRef<CityPowerup[]>([]);
-  const keysRef = useRef({ up: false, down: false, left: false, right: false, fire: false });
+  const keysRef = useRef({ fire: false });
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
   const [tiles, setTiles] = useState<CityTile[]>(startingTiles);
   const [player, setPlayer] = useState({ ...cityPlayerStart });
@@ -3098,7 +3125,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const [status, setStatus] = useState<CityStatus>('playing');
   const [rapidUntil, setRapidUntil] = useState(0);
   const [shieldUntil, setShieldUntil] = useState(0);
-  const [dialogue, setDialogue] = useState('左手移動，右手開炮。守住冰晶主堡，不要先把防線打穿。');
+  const [dialogue, setDialogue] = useState('滑動戰場或按方向鍵推進一格，右側開炮。守住冰晶主堡。');
   const baseHpRef = useRef(3);
   const armorRef = useRef(3);
   const killsRef = useRef(0);
@@ -3113,7 +3140,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     enemiesRef.current = [];
     shotsRef.current = [];
     powerupsRef.current = [];
-    keysRef.current = { up: false, down: false, left: false, right: false, fire: false };
+    keysRef.current = { fire: false };
     spawnTimer.current = 0;
     nextId.current = 1;
     lastTime.current = null;
@@ -3134,7 +3161,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     setStatus('playing');
     setRapidUntil(0);
     setShieldUntil(0);
-    setDialogue('左手移動，右手開炮。守住冰晶主堡，不要先把防線打穿。');
+    setDialogue('滑動戰場或按方向鍵推進一格，右側開炮。守住冰晶主堡。');
   }, []);
 
   useEffect(() => {
@@ -3150,34 +3177,56 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     return () => observer.disconnect();
   }, []);
 
-  const setDirectionPressed = useCallback((direction: CityDirection, pressed: boolean) => {
-    keysRef.current[direction] = pressed;
-    if (pressed) {
-      playerRef.current.dir = direction;
-      setPlayer((current) => ({ ...current, dir: direction }));
+  const movePlayerStep = useCallback((direction: CityDirection) => {
+    const currentPlayer = { ...playerRef.current, dir: direction };
+    const next = cityStepPosition(currentPlayer, direction);
+    if (statusRef.current === 'playing' && cityCanOccupy(next.x, next.y, tilesRef.current, enemiesRef.current)) {
+      currentPlayer.x = next.x;
+      currentPlayer.y = next.y;
     }
+    playerRef.current = currentPlayer;
+    setPlayer({ x: currentPlayer.x, y: currentPlayer.y, dir: currentPlayer.dir });
   }, []);
 
   const setFirePressed = useCallback((pressed: boolean) => {
     keysRef.current.fire = pressed;
   }, []);
 
+  const finishSwipeMove = useCallback((clientX: number, clientY: number) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+    const dx = clientX - start.x;
+    const dy = clientY - start.y;
+    if (Math.hypot(dx, dy) < 18) return;
+    movePlayerStep(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up');
+  }, [movePlayerStep]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') setDirectionPressed('up', true);
-      if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') setDirectionPressed('down', true);
-      if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') setDirectionPressed('left', true);
-      if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') setDirectionPressed('right', true);
+      if (event.repeat) return;
+      if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') {
+        movePlayerStep('up');
+        event.preventDefault();
+      }
+      if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') {
+        movePlayerStep('down');
+        event.preventDefault();
+      }
+      if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') {
+        movePlayerStep('left');
+        event.preventDefault();
+      }
+      if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') {
+        movePlayerStep('right');
+        event.preventDefault();
+      }
       if (event.key === ' ' || event.key.toLowerCase() === 'j' || event.key.toLowerCase() === 'k') {
         setFirePressed(true);
         event.preventDefault();
       }
     };
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') setDirectionPressed('up', false);
-      if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') setDirectionPressed('down', false);
-      if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') setDirectionPressed('left', false);
-      if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') setDirectionPressed('right', false);
       if (event.key === ' ' || event.key.toLowerCase() === 'j' || event.key.toLowerCase() === 'k') {
         setFirePressed(false);
         event.preventDefault();
@@ -3189,7 +3238,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [setDirectionPressed, setFirePressed]);
+  }, [movePlayerStep, setFirePressed]);
 
   useEffect(() => {
     const tick = (time: number) => {
@@ -3200,13 +3249,6 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
       if (statusRef.current === 'playing') {
         const currentTiles = tilesRef.current;
         const currentPlayer = { ...playerRef.current };
-        const keyDir = keysRef.current.up ? 'up' : keysRef.current.down ? 'down' : keysRef.current.left ? 'left' : keysRef.current.right ? 'right' : null;
-        if (keyDir) {
-          currentPlayer.dir = keyDir;
-          const moved = cityMoveUnit(currentPlayer, dt, 0.013 * cityTerrainSpeed(currentPlayer.x, currentPlayer.y, currentTiles), currentTiles);
-          currentPlayer.x = moved.x;
-          currentPlayer.y = moved.y;
-        }
         currentPlayer.cooldown -= dt;
         const rapid = rapidUntilRef.current > time;
         if (keysRef.current.fire && currentPlayer.cooldown <= 0) {
@@ -3231,14 +3273,19 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
         let nextEnemies = enemiesRef.current.map((enemy) => ({ ...enemy }));
         if (spawnTimer.current >= 1550 && nextEnemies.length < 7 && killsRef.current + nextEnemies.length < 20) {
           spawnTimer.current = 0;
-          nextEnemies.push(createCityEnemy(nextId.current++));
+          const spawned = createCityEnemy(nextId.current++);
+          if (!cityOccupied(spawned.x, spawned.y, [currentPlayer, ...nextEnemies])) {
+            nextEnemies.push(spawned);
+          }
           setDialogue('機甲烏賊從城市邊緣潛入。利用牆面擋線，海草可以藏身。');
         }
 
         const enemyShots: CityShot[] = [];
+        const movedEnemies: CityUnit[] = [];
         nextEnemies = nextEnemies.map((enemy) => {
           const nextEnemy = { ...enemy };
           nextEnemy.turnTimer -= dt;
+          nextEnemy.moveTimer -= dt;
           const toBaseX = cityBase.x - nextEnemy.x;
           const toBaseY = cityBase.y - nextEnemy.y;
           if (nextEnemy.turnTimer <= 0) {
@@ -3249,12 +3296,20 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
               nextEnemy.dir = (['up', 'down', 'left', 'right'] as CityDirection[])[Math.floor(Math.random() * 4)];
             }
           }
-          const moved = cityMoveUnit(nextEnemy, dt, nextEnemy.speed * cityTerrainSpeed(nextEnemy.x, nextEnemy.y, currentTiles), currentTiles);
-          if (moved.blocked) {
-            nextEnemy.dir = Math.abs(toBaseX) > Math.abs(toBaseY) ? (toBaseY > 0 ? 'down' : 'up') : toBaseX > 0 ? 'right' : 'left';
-          } else {
-            nextEnemy.x = moved.x;
-            nextEnemy.y = moved.y;
+          if (nextEnemy.moveTimer <= 0) {
+            const nextStep = cityStepPosition(nextEnemy, nextEnemy.dir);
+            const blockers = [
+              currentPlayer,
+              ...movedEnemies,
+              ...nextEnemies.filter((other) => other.id !== nextEnemy.id),
+            ];
+            if (cityCanOccupy(nextStep.x, nextStep.y, currentTiles, blockers)) {
+              nextEnemy.x = nextStep.x;
+              nextEnemy.y = nextStep.y;
+            } else {
+              nextEnemy.dir = Math.abs(toBaseX) > Math.abs(toBaseY) ? (toBaseY > 0 ? 'down' : 'up') : toBaseX > 0 ? 'right' : 'left';
+            }
+            nextEnemy.moveTimer = nextEnemy.stepDelay * cityTerrainSpeed(nextEnemy.x, nextEnemy.y, currentTiles);
           }
           nextEnemy.cooldown -= dt;
           if (nextEnemy.cooldown <= 0) {
@@ -3274,6 +3329,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             });
             nextEnemy.cooldown = 1050 + Math.random() * 700;
           }
+          movedEnemies.push(nextEnemy);
           return nextEnemy;
         });
 
@@ -3447,7 +3503,18 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
         <p>{dialogue}</p>
       </div>
       <div className="city-arena" ref={arenaRef}>
-        <div className="city-viewport" style={viewportStyle}>
+        <div
+          className="city-viewport"
+          style={viewportStyle}
+          onPointerDown={(event) => {
+            if ((event.target as HTMLElement).closest('button')) return;
+            swipeStartRef.current = { x: event.clientX, y: event.clientY };
+          }}
+          onPointerUp={(event) => finishSwipeMove(event.clientX, event.clientY)}
+          onPointerCancel={() => {
+            swipeStartRef.current = null;
+          }}
+        >
           <div className="city-world" style={worldTransform}>
             {tiles.map((tile) => (
               <span
@@ -3492,16 +3559,16 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             ))}
           </div>
           <div className="city-controls" aria-label="方向控制">
-            <button onPointerDown={() => setDirectionPressed('up', true)} onPointerUp={() => setDirectionPressed('up', false)} onPointerCancel={() => setDirectionPressed('up', false)} onPointerLeave={() => setDirectionPressed('up', false)} aria-label="向上">
+            <button onPointerDown={() => movePlayerStep('up')} aria-label="向上">
               <ChevronUp size={20} />
             </button>
-            <button onPointerDown={() => setDirectionPressed('left', true)} onPointerUp={() => setDirectionPressed('left', false)} onPointerCancel={() => setDirectionPressed('left', false)} onPointerLeave={() => setDirectionPressed('left', false)} aria-label="向左">
+            <button onPointerDown={() => movePlayerStep('left')} aria-label="向左">
               <ChevronLeft size={20} />
             </button>
-            <button onPointerDown={() => setDirectionPressed('right', true)} onPointerUp={() => setDirectionPressed('right', false)} onPointerCancel={() => setDirectionPressed('right', false)} onPointerLeave={() => setDirectionPressed('right', false)} aria-label="向右">
+            <button onPointerDown={() => movePlayerStep('right')} aria-label="向右">
               <ChevronRight size={20} />
             </button>
-            <button onPointerDown={() => setDirectionPressed('down', true)} onPointerUp={() => setDirectionPressed('down', false)} onPointerCancel={() => setDirectionPressed('down', false)} onPointerLeave={() => setDirectionPressed('down', false)} aria-label="向下">
+            <button onPointerDown={() => movePlayerStep('down')} aria-label="向下">
               <ChevronDown size={20} />
             </button>
           </div>

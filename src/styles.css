@@ -2722,20 +2722,20 @@ button:disabled {
 .city-controls {
   position: absolute;
   z-index: 22;
-  left: 11px;
-  bottom: 11px;
+  left: 8px;
+  bottom: 8px;
   display: grid;
-  grid-template-columns: repeat(3, 34px);
-  grid-template-rows: repeat(3, 34px);
-  gap: 4px;
+  grid-template-columns: repeat(3, 44px);
+  grid-template-rows: repeat(3, 44px);
+  gap: 3px;
   touch-action: none;
   user-select: none;
 }
 
 .city-controls button,
 .city-fire-control {
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -2750,10 +2750,10 @@ button:disabled {
 .city-fire-control {
   position: absolute;
   z-index: 22;
-  right: 18px;
-  bottom: 28px;
-  width: 62px;
-  height: 62px;
+  right: 14px;
+  bottom: 30px;
+  width: 70px;
+  height: 70px;
   border-radius: 50%;
   color: #1e1607;
   background:
@@ -3425,12 +3425,17 @@ button:disabled {
   }
 
   .city-controls {
-    grid-template-columns: repeat(3, 32px);
-    grid-template-rows: repeat(3, 32px);
+    grid-template-columns: repeat(3, 40px);
+    grid-template-rows: repeat(3, 40px);
   }
 
   .city-controls button {
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
+  }
+
+  .city-fire-control {
+    width: 64px;
+    height: 64px;
   }
 }
