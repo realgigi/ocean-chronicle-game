@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, Gem, Play, RotateCcw, Search, Sparkles, Swords, Zap } from 'lucide-react';
 import { startOceanBgm } from './audio';
 
@@ -3115,6 +3115,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const keysRef = useRef({ fire: false });
   const heldDirectionRef = useRef<CityDirection | null>(null);
   const nextPlayerStepAt = useRef(0);
+  const movePointerRef = useRef<number | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
   const [tiles, setTiles] = useState<CityTile[]>(startingTiles);
@@ -3128,7 +3129,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const [status, setStatus] = useState<CityStatus>('playing');
   const [rapidUntil, setRapidUntil] = useState(0);
   const [shieldUntil, setShieldUntil] = useState(0);
-  const [dialogue, setDialogue] = useState('點一下前進一格，按住方向可連續推進；右側開炮。');
+  const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
+  const [dialogue, setDialogue] = useState('按住左下方向盤滑動換方向，一格一格推進；右側開炮。');
   const baseHpRef = useRef(3);
   const armorRef = useRef(3);
   const killsRef = useRef(0);
@@ -3145,6 +3147,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     powerupsRef.current = [];
     keysRef.current = { fire: false };
     heldDirectionRef.current = null;
+    movePointerRef.current = null;
     nextPlayerStepAt.current = 0;
     spawnTimer.current = 0;
     nextId.current = 1;
@@ -3166,7 +3169,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     setStatus('playing');
     setRapidUntil(0);
     setShieldUntil(0);
-    setDialogue('點一下前進一格，按住方向可連續推進；右側開炮。');
+    setPadDirection(null);
+    setDialogue('按住左下方向盤滑動換方向，一格一格推進；右側開炮。');
   }, []);
 
   useEffect(() => {
@@ -3194,7 +3198,9 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   }, []);
 
   const holdPlayerDirection = useCallback((direction: CityDirection | null, startTime = performance.now()) => {
+    if (heldDirectionRef.current === direction) return;
     heldDirectionRef.current = direction;
+    setPadDirection(direction);
     if (direction) {
       movePlayerStep(direction);
       nextPlayerStepAt.current = startTime + cityPlayerStepDelayMs;
@@ -3214,6 +3220,28 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     if (Math.hypot(dx, dy) < 18) return;
     movePlayerStep(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up');
   }, [movePlayerStep]);
+
+  const directionFromMovePad = useCallback((clientX: number, clientY: number, target: HTMLElement): CityDirection | null => {
+    const rect = target.getBoundingClientRect();
+    const dx = clientX - (rect.left + rect.width / 2);
+    const dy = clientY - (rect.top + rect.height / 2);
+    const deadzone = Math.min(rect.width, rect.height) * 0.16;
+    if (Math.hypot(dx, dy) < deadzone) return null;
+    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
+    return dy > 0 ? 'down' : 'up';
+  }, []);
+
+  const updateMovePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const direction = directionFromMovePad(event.clientX, event.clientY, event.currentTarget);
+    holdPlayerDirection(direction);
+  }, [directionFromMovePad, holdPlayerDirection]);
+
+  const releaseMovePad = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
+    if (event && movePointerRef.current !== null && event.pointerId !== movePointerRef.current) return;
+    movePointerRef.current = null;
+    holdPlayerDirection(null);
+  }, [holdPlayerDirection]);
 
   useEffect(() => {
     const directionFromKey = (event: KeyboardEvent): CityDirection | null => {
@@ -3590,17 +3618,32 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
               <span className="enemy" key={`mini-${enemy.id}`} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }} />
             ))}
           </div>
-          <div className="city-controls" aria-label="方向控制">
-            <button onPointerDown={() => holdPlayerDirection('up')} onPointerUp={() => holdPlayerDirection(null)} onPointerCancel={() => holdPlayerDirection(null)} onPointerLeave={() => holdPlayerDirection(null)} aria-label="向上">
+          <div
+            className={`city-controls ${padDirection ? `active-${padDirection}` : ''}`}
+            aria-label="方向控制"
+            onPointerDown={(event) => {
+              if (movePointerRef.current !== null) return;
+              movePointerRef.current = event.pointerId;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              updateMovePad(event);
+            }}
+            onPointerMove={(event) => {
+              if (movePointerRef.current === event.pointerId) updateMovePad(event);
+            }}
+            onPointerUp={releaseMovePad}
+            onPointerCancel={releaseMovePad}
+            onLostPointerCapture={releaseMovePad}
+          >
+            <button type="button" tabIndex={-1} aria-label="向上">
               <ChevronUp size={20} />
             </button>
-            <button onPointerDown={() => holdPlayerDirection('left')} onPointerUp={() => holdPlayerDirection(null)} onPointerCancel={() => holdPlayerDirection(null)} onPointerLeave={() => holdPlayerDirection(null)} aria-label="向左">
+            <button type="button" tabIndex={-1} aria-label="向左">
               <ChevronLeft size={20} />
             </button>
-            <button onPointerDown={() => holdPlayerDirection('right')} onPointerUp={() => holdPlayerDirection(null)} onPointerCancel={() => holdPlayerDirection(null)} onPointerLeave={() => holdPlayerDirection(null)} aria-label="向右">
+            <button type="button" tabIndex={-1} aria-label="向右">
               <ChevronRight size={20} />
             </button>
-            <button onPointerDown={() => holdPlayerDirection('down')} onPointerUp={() => holdPlayerDirection(null)} onPointerCancel={() => holdPlayerDirection(null)} onPointerLeave={() => holdPlayerDirection(null)} aria-label="向下">
+            <button type="button" tabIndex={-1} aria-label="向下">
               <ChevronDown size={20} />
             </button>
           </div>

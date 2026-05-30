@@ -2725,17 +2725,38 @@ button:disabled {
   left: 8px;
   bottom: 8px;
   display: grid;
-  grid-template-columns: repeat(3, 44px);
-  grid-template-rows: repeat(3, 44px);
-  gap: 3px;
+  width: 144px;
+  height: 144px;
+  grid-template-columns: repeat(3, 42px);
+  grid-template-rows: repeat(3, 42px);
+  align-content: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(133, 245, 255, 0.25) 0 21%, transparent 22%),
+    radial-gradient(circle at 50% 50%, rgba(16, 66, 88, 0.88), rgba(4, 22, 39, 0.78) 64%, rgba(6, 17, 31, 0.42) 70%);
+  box-shadow:
+    inset 0 0 0 1px rgba(178, 232, 244, 0.24),
+    0 12px 24px rgba(0, 0, 0, 0.3);
   touch-action: none;
   user-select: none;
 }
 
+.city-controls::before {
+  content: "";
+  position: absolute;
+  inset: 48px;
+  border-radius: 50%;
+  background: rgba(202, 247, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(202, 247, 255, 0.18);
+  pointer-events: none;
+}
+
 .city-controls button,
 .city-fire-control {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -2745,6 +2766,23 @@ button:disabled {
   box-shadow:
     inset 0 0 0 1px rgba(178, 232, 244, 0.24),
     0 8px 14px rgba(0, 0, 0, 0.22);
+}
+
+.city-controls button {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.city-controls.active-up button:first-child,
+.city-controls.active-left button:nth-child(2),
+.city-controls.active-right button:nth-child(3),
+.city-controls.active-down button:nth-child(4) {
+  color: #092130;
+  background: linear-gradient(180deg, rgba(145, 248, 255, 0.98), rgba(70, 209, 229, 0.94));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.64),
+    0 0 18px rgba(112, 235, 255, 0.52);
 }
 
 .city-fire-control {
@@ -3425,13 +3463,15 @@ button:disabled {
   }
 
   .city-controls {
-    grid-template-columns: repeat(3, 40px);
-    grid-template-rows: repeat(3, 40px);
+    width: 132px;
+    height: 132px;
+    grid-template-columns: repeat(3, 38px);
+    grid-template-rows: repeat(3, 38px);
   }
 
   .city-controls button {
-    width: 40px;
-    height: 40px;
+    width: 38px;
+    height: 38px;
   }
 
   .city-fire-control {
