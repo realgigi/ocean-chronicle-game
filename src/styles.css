@@ -2425,8 +2425,10 @@ button:disabled {
   top: 0;
   will-change: transform;
   background:
+    radial-gradient(circle at 14% 42%, rgba(255, 229, 137, 0.08), transparent 13%),
     radial-gradient(circle at 22% 18%, rgba(91, 210, 207, 0.12), transparent 18%),
     radial-gradient(circle at 74% 76%, rgba(227, 183, 86, 0.12), transparent 22%),
+    radial-gradient(circle at 84% 24%, rgba(179, 118, 255, 0.1), transparent 16%),
     linear-gradient(135deg, rgba(49, 130, 143, 0.12), transparent 44%),
     repeating-linear-gradient(90deg, rgba(210, 244, 248, 0.07) 0 1px, transparent 1px calc(100% / 32)),
     repeating-linear-gradient(0deg, rgba(210, 244, 248, 0.06) 0 1px, transparent 1px calc(100% / 32)),
@@ -2439,13 +2441,22 @@ button:disabled {
   border-radius: 3px;
 }
 
+.city-tile.coral,
+.city-tile.stone,
+.city-tile.crystal {
+  transform: scale(0.92);
+  transform-origin: center;
+}
+
 .city-tile.coral {
   background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 1px, transparent 1px 50%),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 50%),
     radial-gradient(circle at 34% 28%, rgba(255, 184, 135, 0.36), transparent 34%),
     linear-gradient(135deg, rgba(89, 221, 232, 0.2), transparent 42%),
-    linear-gradient(180deg, rgba(76, 91, 115, 0.98), rgba(47, 33, 69, 0.98));
+    linear-gradient(180deg, rgba(95, 103, 133, 0.98), rgba(63, 38, 84, 0.98));
   box-shadow:
-    inset 0 0 0 1px rgba(247, 221, 173, 0.22),
+    inset 0 0 0 1px rgba(247, 221, 173, 0.32),
     inset 0 -8px 16px rgba(0, 0, 0, 0.28),
     0 5px 12px rgba(0, 0, 0, 0.22);
 }
@@ -2466,6 +2477,25 @@ button:disabled {
     0 6px 12px rgba(0, 0, 0, 0.24);
 }
 
+.city-tile.crystal {
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.58), transparent 24%),
+    linear-gradient(135deg, rgba(169, 246, 255, 0.92), rgba(137, 115, 255, 0.7) 46%, rgba(50, 34, 112, 0.98));
+  box-shadow:
+    inset 0 0 0 1px rgba(229, 255, 255, 0.38),
+    0 0 12px rgba(132, 236, 255, 0.34),
+    0 6px 12px rgba(0, 0, 0, 0.24);
+}
+
+.city-tile.crystal.hp-2 {
+  filter: saturate(0.86) brightness(1.08);
+}
+
+.city-tile.crystal.hp-1 {
+  opacity: 0.82;
+  filter: saturate(0.72) brightness(1.24);
+}
+
 .city-tile.current {
   z-index: 1;
   border-radius: 0;
@@ -2473,6 +2503,28 @@ button:disabled {
     linear-gradient(90deg, transparent, rgba(119, 235, 245, 0.2), transparent),
     repeating-linear-gradient(90deg, rgba(121, 236, 245, 0.22) 0 7px, rgba(31, 95, 123, 0.14) 8px 14px);
   opacity: 0.78;
+}
+
+.city-tile.vent {
+  z-index: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255, 248, 191, 0.86) 0 12%, rgba(106, 230, 226, 0.34) 13% 42%, transparent 43%),
+    radial-gradient(circle at 50% 50%, rgba(255, 226, 137, 0.2), transparent 72%);
+  box-shadow:
+    0 0 12px rgba(255, 222, 116, 0.3),
+    inset 0 0 0 1px rgba(255, 239, 176, 0.18);
+  opacity: 0.82;
+}
+
+.city-tile.trench {
+  z-index: 1;
+  border-radius: 2px;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(8, 15, 34, 0.88), rgba(9, 28, 47, 0.68) 58%, transparent 72%),
+    repeating-linear-gradient(135deg, rgba(116, 82, 181, 0.3) 0 4px, rgba(21, 55, 88, 0.24) 5px 10px);
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.42);
+  opacity: 0.82;
 }
 
 .city-tile.seaweed {
@@ -2573,6 +2625,19 @@ button:disabled {
     drop-shadow(0 0 15px rgba(119, 231, 245, 0.58));
 }
 
+.city-unit.piercing img {
+  filter:
+    drop-shadow(0 0 8px rgba(255, 245, 163, 0.86))
+    drop-shadow(0 0 15px rgba(178, 128, 255, 0.62));
+}
+
+.city-unit.enemy.frozen img {
+  filter:
+    saturate(0.62)
+    hue-rotate(145deg)
+    drop-shadow(0 0 9px rgba(142, 236, 255, 0.76));
+}
+
 .city-unit i {
   position: absolute;
   left: 10%;
@@ -2604,6 +2669,15 @@ button:disabled {
     0 0 10px rgba(210, 94, 255, 0.72);
 }
 
+.city-shot.piercing {
+  border-radius: 40% 60% 52% 48%;
+  background:
+    radial-gradient(circle at 30% 26%, #fff 0 14%, #fff0a8 15% 34%, rgba(157, 101, 255, 0.86) 35% 72%, transparent 73%);
+  box-shadow:
+    0 0 0 2px rgba(255, 239, 154, 0.18),
+    0 0 14px rgba(191, 137, 255, 0.78);
+}
+
 .city-powerup {
   z-index: 13;
   width: var(--city-powerup-size);
@@ -2631,6 +2705,34 @@ button:disabled {
   filter:
     hue-rotate(310deg)
     drop-shadow(0 0 11px rgba(191, 141, 255, 0.74));
+}
+
+.city-powerup.freeze {
+  filter:
+    hue-rotate(155deg)
+    saturate(1.35)
+    drop-shadow(0 0 12px rgba(119, 235, 255, 0.9));
+}
+
+.city-powerup.blast {
+  filter:
+    hue-rotate(18deg)
+    saturate(1.4)
+    drop-shadow(0 0 13px rgba(255, 205, 91, 0.92));
+}
+
+.city-powerup.pierce {
+  filter:
+    hue-rotate(250deg)
+    saturate(1.28)
+    drop-shadow(0 0 12px rgba(194, 139, 255, 0.86));
+}
+
+.city-powerup.repair {
+  filter:
+    hue-rotate(70deg)
+    saturate(1.22)
+    drop-shadow(0 0 12px rgba(139, 255, 176, 0.86));
 }
 
 .city-seaweed-cover {
