@@ -71,6 +71,27 @@ export async function startOceanBgm() {
   }, 840);
 }
 
+export function stopOceanBgm() {
+  if (leadTimer !== null) {
+    window.clearInterval(leadTimer);
+    leadTimer = null;
+  }
+  if (bassTimer !== null) {
+    window.clearInterval(bassTimer);
+    bassTimer = null;
+  }
+  padOscillators.forEach((oscillator) => {
+    try {
+      oscillator.stop();
+    } catch {
+      // Already stopped by the browser.
+    }
+    oscillator.disconnect();
+  });
+  padOscillators = [];
+  void audioContext?.suspend().catch(() => undefined);
+}
+
 declare global {
   interface Window {
     webkitAudioContext?: typeof AudioContext;

@@ -3295,6 +3295,10 @@ button:disabled {
     0 0 20px rgba(194, 136, 255, 0.82);
 }
 
+.lightbomb-bomb.sliding {
+  filter: drop-shadow(0 0 12px rgba(255, 235, 124, 0.72));
+}
+
 .lightbomb-explosion {
   position: absolute;
   z-index: 11;
@@ -3388,13 +3392,13 @@ button:disabled {
   left: 6px;
   bottom: 6px;
   display: grid;
-  width: 102px;
-  height: 102px;
-  grid-template-columns: repeat(3, 29px);
-  grid-template-rows: repeat(3, 29px);
+  width: 116px;
+  height: 116px;
+  grid-template-columns: repeat(3, 34px);
+  grid-template-rows: repeat(3, 34px);
   align-content: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   border-radius: 50%;
   background:
     radial-gradient(circle at 50% 50%, rgba(255, 230, 132, 0.22) 0 21%, transparent 22%),
@@ -3408,8 +3412,8 @@ button:disabled {
 
 .lightbomb-controls button,
 .lightbomb-action {
-  width: 29px;
-  height: 29px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -3456,10 +3460,10 @@ button:disabled {
 .lightbomb-action {
   position: absolute;
   z-index: 22;
-  right: 14px;
-  bottom: 28px;
-  width: 68px;
-  height: 68px;
+  right: 12px;
+  bottom: 24px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
   color: #1e1607;
   background:

@@ -1,6 +1,6 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, Gem, Play, RotateCcw, Search, Sparkles, Swords, Zap } from 'lucide-react';
-import { startOceanBgm } from './audio';
+import { startOceanBgm, stopOceanBgm } from './audio';
 
 function assetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
@@ -265,9 +265,13 @@ type LightBombBomb = {
   id: number;
   row: number;
   col: number;
+  x: number;
+  y: number;
   range: number;
   explodeAt: number;
   remote: boolean;
+  kickedDir?: CityDirection;
+  moveAt: number;
 };
 type LightBombExplosion = {
   id: number;
@@ -725,6 +729,7 @@ const lightBombRows = 31;
 const lightBombCols = 31;
 const lightBombViewRows = 25;
 const lightBombViewCols = 15;
+const lightBombKickStepMs = 82;
 const lightBombPlayerStart: LightBombPlayer = {
   row: 1,
   col: 1,
@@ -1512,7 +1517,33 @@ export default function App() {
   const [cleared, setCleared] = useState(false);
   const [videoLeadIn, setVideoLeadIn] = useState<VideoLeadInConfig>(videoLeadIns.startGame);
 
+  useEffect(() => {
+    const stopOnHide = () => {
+      if (document.visibilityState === 'hidden') stopOceanBgm();
+    };
+    window.addEventListener('pagehide', stopOceanBgm);
+    window.addEventListener('beforeunload', stopOceanBgm);
+    document.addEventListener('visibilitychange', stopOnHide);
+    return () => {
+      window.removeEventListener('pagehide', stopOceanBgm);
+      window.removeEventListener('beforeunload', stopOceanBgm);
+      document.removeEventListener('visibilitychange', stopOnHide);
+      stopOceanBgm();
+    };
+  }, []);
+
+  const showTitle = useCallback(() => {
+    stopOceanBgm();
+    setScreen('title');
+  }, []);
+
+  const showMap = useCallback(() => {
+    stopOceanBgm();
+    setScreen('map');
+  }, []);
+
   const openVideoLeadIn = (leadIn: VideoLeadInConfig) => {
+    stopOceanBgm();
     setVideoLeadIn(leadIn);
     setScreen('video');
   };
@@ -1577,7 +1608,7 @@ export default function App() {
         {screen === 'map' && (
           <EpisodeMap
             cleared={cleared}
-            onBack={() => setScreen('title')}
+            onBack={showTitle}
             onPlay={openLeadInOrCombat}
             onMemory={() => openVideoLeadIn(videoLeadIns.coralStreet)}
             onBreakout={() => openVideoLeadIn(videoLeadIns.iceCastle)}
@@ -1592,26 +1623,27 @@ export default function App() {
             }}
           />
         )}
-        {screen === 'gallery' && <CharacterGallery onBack={() => setScreen('title')} />}
-        {screen === 'memory' && <MemoryMatchGame onBack={() => setScreen('map')} />}
-        {screen === 'breakout' && <IceBreakoutGame onBack={() => setScreen('map')} />}
-        {screen === 'minefield' && <MinefieldGame onBack={() => setScreen('map')} />}
-        {screen === 'snowfield' && <SnowfieldGame onBack={() => setScreen('map')} />}
-        {screen === 'snake' && <TideSnakeGame onBack={() => setScreen('map')} />}
-        {screen === 'tower' && <AbyssTowerGame onBack={() => setScreen('map')} />}
-        {screen === 'city' && <UnderseaCityGame onBack={() => setScreen('map')} />}
-        {screen === 'lightbomb' && <LightBombMazeGame onBack={() => setScreen('map')} />}
+        {screen === 'gallery' && <CharacterGallery onBack={showTitle} />}
+        {screen === 'memory' && <MemoryMatchGame onBack={showMap} />}
+        {screen === 'breakout' && <IceBreakoutGame onBack={showMap} />}
+        {screen === 'minefield' && <MinefieldGame onBack={showMap} />}
+        {screen === 'snowfield' && <SnowfieldGame onBack={showMap} />}
+        {screen === 'snake' && <TideSnakeGame onBack={showMap} />}
+        {screen === 'tower' && <AbyssTowerGame onBack={showMap} />}
+        {screen === 'city' && <UnderseaCityGame onBack={showMap} />}
+        {screen === 'lightbomb' && <LightBombMazeGame onBack={showMap} />}
         {screen === 'video' && <VideoLeadIn leadIn={videoLeadIn} onComplete={completeVideoLeadIn} />}
         {screen === 'combat' && (
           <CombatStage
             onVictory={() => {
+              stopOceanBgm();
               setCleared(true);
               setScreen('victory');
             }}
-            onExit={() => setScreen('map')}
+            onExit={showMap}
           />
         )}
-        {screen === 'victory' && <VictoryCard onMap={() => setScreen('map')} onReplay={openLeadInOrCombat} />}
+        {screen === 'victory' && <VictoryCard onMap={showMap} onReplay={openLeadInOrCombat} />}
       </div>
     </main>
   );
@@ -4281,8 +4313,12 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     const nextRow = bomb.row + vector.y;
     const nextCol = bomb.col + vector.x;
     if (!canEnterCell(nextRow, nextCol, bombs.filter((item) => item.id !== bomb.id), enemies)) return bombs;
-    showNotice('kick', '踢開');
-    return bombs.map((item) => (item.id === bomb.id ? { ...item, row: nextRow, col: nextCol } : item));
+    showNotice('kick', '滑行');
+    return bombs.map((item) => (
+      item.id === bomb.id
+        ? { ...item, row: nextRow, col: nextCol, x: bomb.col, y: bomb.row, kickedDir: direction, moveAt: performance.now() + lightBombKickStepMs }
+        : item
+    ));
   }, [canEnterCell, showNotice]);
 
   const tryMovePlayer = useCallback((direction: CityDirection) => {
@@ -4326,9 +4362,12 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
       id: nextId.current++,
       row: player.row,
       col: player.col,
+      x: player.col,
+      y: player.row,
       range: player.range,
       remote,
       explodeAt: now + (remote ? 8000 : 2350),
+      moveAt: 0,
     };
     bombsRef.current = [...bombsRef.current, nextBomb];
     setBombs(bombsRef.current);
@@ -4453,6 +4492,32 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
 
         while (explodeQueue.length) explodeBomb(explodeQueue.shift() ?? -1);
 
+        const canSlideBombTo = (row: number, col: number, bombId: number) => {
+          if (row < 0 || col < 0 || row >= lightBombRows || col >= lightBombCols) return false;
+          if (lightBombBlocks(lightBombTileAt(nextTiles, row, col))) return false;
+          if (nextBombs.some((bomb) => bomb.id !== bombId && bomb.row === row && bomb.col === col)) return false;
+          if (currentPlayer.row === row && currentPlayer.col === col) return false;
+          return !nextEnemies.some((enemy) => enemy.row === row && enemy.col === col);
+        };
+
+        nextBombs = nextBombs.map((bomb) => {
+          let nextBomb = { ...bomb };
+          nextBomb.x = lightBombVisualStep(nextBomb.x, nextBomb.col, dt, lightBombKickStepMs);
+          nextBomb.y = lightBombVisualStep(nextBomb.y, nextBomb.row, dt, lightBombKickStepMs);
+          const settled = Math.abs(nextBomb.x - nextBomb.col) + Math.abs(nextBomb.y - nextBomb.row) < 0.05;
+          if (nextBomb.kickedDir && settled && time >= nextBomb.moveAt) {
+            const vector = cityDirectionVector(nextBomb.kickedDir);
+            const slideRow = nextBomb.row + vector.y;
+            const slideCol = nextBomb.col + vector.x;
+            if (canSlideBombTo(slideRow, slideCol, nextBomb.id)) {
+              nextBomb = { ...nextBomb, row: slideRow, col: slideCol, moveAt: time + lightBombKickStepMs };
+            } else {
+              nextBomb = { ...nextBomb, x: nextBomb.col, y: nextBomb.row, kickedDir: undefined, moveAt: 0 };
+            }
+          }
+          return nextBomb;
+        });
+
         nextEnemies = nextEnemies.map((enemy) => {
           const nextEnemy = { ...enemy };
           const settled = Math.abs(nextEnemy.x - nextEnemy.col) + Math.abs(nextEnemy.y - nextEnemy.row) < 0.05;
@@ -4575,7 +4640,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
               </span>
             ))}
             {bombs.map((bomb) => (
-              <span className={`lightbomb-bomb ${bomb.remote ? 'remote' : ''}`} key={bomb.id} style={lightBombTokenStyle(bomb.col, bomb.row)} />
+              <span className={`lightbomb-bomb ${bomb.remote ? 'remote' : ''} ${bomb.kickedDir ? 'sliding' : ''}`} key={bomb.id} style={lightBombTokenStyle(bomb.x, bomb.y)} />
             ))}
             {explosions.map((explosion) => <span className="lightbomb-explosion" key={explosion.id} style={lightBombCellStyle(explosion.row, explosion.col)} />)}
             {enemies.map((enemy) => (
