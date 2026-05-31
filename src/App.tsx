@@ -177,7 +177,7 @@ type TowerMonster = {
 };
 
 type CityDirection = 'up' | 'down' | 'left' | 'right';
-type CityTileKind = 'coral' | 'stone' | 'seaweed' | 'current' | 'vent' | 'crystal' | 'trench';
+type CityTileKind = 'coral' | 'stone' | 'seaweed' | 'current' | 'vent' | 'crystal' | 'trench' | 'rubble';
 type CityTile = {
   id: number;
   kind: CityTileKind;
@@ -824,6 +824,13 @@ function createCityTiles(): CityTile[] {
     [17, 31],
   ].forEach(([col, row]) => add('coral', col, row));
 
+  for (let row = 24; row <= 27; row += 1) {
+    for (let col = 13; col <= 18; col += 1) {
+      if ((col === 15 && row === 26) || (col === 16 && row === 26)) continue;
+      if (Math.random() < 0.52) add('rubble', col, row);
+    }
+  }
+
   [
     { col: 4, row: 4, width: 2, height: 3 },
     { col: 26, row: 4, width: 2, height: 3 },
@@ -833,41 +840,48 @@ function createCityTiles(): CityTile[] {
     { col: 24, row: 19, width: 3, height: 1 },
   ].forEach((ruin) => tryBlock('stone', ruin.col, ruin.row, ruin.width, ruin.height, true));
 
-  for (let i = 0; i < 13; i += 1) {
+  for (let i = 0; i < 20; i += 1) {
     const horizontal = Math.random() < 0.58;
-    const width = horizontal ? randomInt(2, 4) : randomInt(1, 2);
-    const height = horizontal ? randomInt(1, 2) : randomInt(2, 4);
-    tryBlock('stone', randomInt(2, cityGridSize - width - 2), randomInt(3, 25 - height), width, height, true);
+    const width = horizontal ? randomInt(2, 3) : 1;
+    const height = horizontal ? 1 : randomInt(2, 3);
+    tryBlock('stone', randomInt(2, cityGridSize - width - 2), randomInt(3, 26 - height), width, height, true);
   }
 
-  for (let i = 0; i < 24; i += 1) {
+  for (let i = 0; i < 44; i += 1) {
     const horizontal = Math.random() < 0.62;
-    const width = horizontal ? randomInt(2, 4) : 1;
-    const height = horizontal ? 1 : randomInt(2, 4);
+    const width = horizontal ? randomInt(2, 5) : 1;
+    const height = horizontal ? 1 : randomInt(2, 5);
     const kind: CityTileKind = Math.random() < 0.82 ? 'coral' : 'crystal';
     tryBlock(kind, randomInt(2, cityGridSize - width - 2), randomInt(3, 26 - height), width, height);
   }
 
-  for (let i = 0; i < 6; i += 1) {
-    const width = randomInt(3, 5);
-    const height = randomInt(2, 3);
-    tryBlock('seaweed', randomInt(1, cityGridSize - width - 1), randomInt(7, 24 - height), width, height);
+  for (let i = 0; i < 11; i += 1) {
+    const width = randomInt(3, 6);
+    const height = randomInt(2, 4);
+    tryBlock('seaweed', randomInt(1, cityGridSize - width - 1), randomInt(5, 25 - height), width, height);
   }
 
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < 7; i += 1) {
     const width = randomInt(4, 7);
     const height = Math.random() < 0.5 ? 1 : 2;
     tryBlock('current', randomInt(2, cityGridSize - width - 2), randomInt(6, 25 - height), width, height);
   }
 
-  for (let i = 0; i < 4; i += 1) {
-    const width = randomInt(2, 4);
-    const height = randomInt(2, 3);
-    tryBlock('trench', randomInt(2, cityGridSize - width - 2), randomInt(8, 25 - height), width, height);
+  for (let i = 0; i < 7; i += 1) {
+    const width = randomInt(2, 5);
+    const height = randomInt(2, 4);
+    tryBlock('trench', randomInt(2, cityGridSize - width - 2), randomInt(6, 26 - height), width, height);
   }
 
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 10; i += 1) {
     tryBlock('vent', randomInt(3, cityGridSize - 4), randomInt(5, 25), 1, 1);
+  }
+
+  for (let i = 0; i < 54; i += 1) {
+    const horizontal = Math.random() < 0.68;
+    const width = horizontal ? randomInt(1, 3) : 1;
+    const height = horizontal ? 1 : randomInt(1, 3);
+    tryBlock('rubble', randomInt(1, cityGridSize - width - 1), randomInt(3, 27 - height), width, height);
   }
   return tiles;
 }
