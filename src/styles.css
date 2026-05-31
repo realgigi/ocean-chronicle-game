@@ -384,6 +384,10 @@ button:disabled {
   background: linear-gradient(135deg, rgba(38, 100, 113, 0.92), rgba(109, 63, 132, 0.86));
 }
 
+.map-node.lightbomb {
+  background: linear-gradient(135deg, rgba(47, 146, 139, 0.92), rgba(190, 126, 48, 0.86));
+}
+
 .map-node.cleared {
   background: linear-gradient(135deg, rgba(44, 146, 107, 0.86), rgba(32, 94, 120, 0.84));
 }
@@ -3089,6 +3093,446 @@ button:disabled {
   100% {
     opacity: 0;
     transform: translate(-50%, -14px) scale(0.96);
+  }
+}
+
+.lightbomb-screen {
+  width: 100%;
+  max-width: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 214, 91, 0.16), transparent 30%),
+    linear-gradient(180deg, #061827 0%, #123239 48%, #050d17 100%);
+}
+
+.lightbomb-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(96, 233, 228, 0.13), transparent 22%),
+    radial-gradient(circle at 82% 70%, rgba(255, 191, 86, 0.12), transparent 24%),
+    repeating-linear-gradient(90deg, rgba(216, 247, 255, 0.04) 0 1px, transparent 1px 48px);
+  pointer-events: none;
+}
+
+.lightbomb-nav {
+  position: absolute;
+  z-index: 26;
+  top: max(8px, env(safe-area-inset-top));
+  left: 8px;
+  right: 8px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.lightbomb-nav .icon-button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(4, 18, 30, 0.66);
+  box-shadow:
+    inset 0 0 0 1px rgba(181, 235, 243, 0.24),
+    0 10px 18px rgba(0, 0, 0, 0.24);
+  pointer-events: auto;
+}
+
+.lightbomb-arena {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 2px 2px;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.lightbomb-viewport {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(99, 210, 198, 0.18), transparent 32%),
+    linear-gradient(180deg, rgba(8, 42, 46, 0.98), rgba(4, 14, 22, 0.99));
+  box-shadow:
+    inset 0 0 0 1px rgba(184, 238, 240, 0.22),
+    0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.lightbomb-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+  background:
+    radial-gradient(circle at 18% 24%, rgba(255, 224, 112, 0.09), transparent 15%),
+    radial-gradient(circle at 78% 72%, rgba(128, 234, 229, 0.09), transparent 18%),
+    repeating-linear-gradient(90deg, rgba(213, 248, 246, 0.06) 0 1px, transparent 1px calc(100% / 31)),
+    repeating-linear-gradient(0deg, rgba(213, 248, 246, 0.055) 0 1px, transparent 1px calc(100% / 31)),
+    linear-gradient(180deg, rgba(12, 58, 58, 0.98), rgba(6, 28, 40, 0.98));
+}
+
+.lightbomb-tile {
+  position: absolute;
+  border-radius: 3px;
+}
+
+.lightbomb-tile.solid {
+  z-index: 4;
+  transform: scale(0.9);
+  background:
+    radial-gradient(circle at 33% 25%, rgba(255, 255, 255, 0.22), transparent 32%),
+    linear-gradient(135deg, rgba(116, 149, 154, 0.98), rgba(34, 62, 79, 0.98));
+  box-shadow:
+    inset 0 0 0 1px rgba(226, 251, 249, 0.22),
+    inset 0 -9px 16px rgba(0, 0, 0, 0.3),
+    0 5px 12px rgba(0, 0, 0, 0.24);
+}
+
+.lightbomb-tile.soft {
+  z-index: 3;
+  transform: scale(0.9);
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 1px, transparent 1px 50%),
+    radial-gradient(circle at 32% 25%, rgba(255, 221, 128, 0.28), transparent 36%),
+    linear-gradient(180deg, rgba(102, 103, 125, 0.96), rgba(69, 40, 83, 0.98));
+  box-shadow:
+    inset 0 0 0 1px rgba(249, 225, 164, 0.26),
+    inset 0 -7px 14px rgba(0, 0, 0, 0.28),
+    0 5px 10px rgba(0, 0, 0, 0.22);
+}
+
+.lightbomb-tile.rubble {
+  z-index: 1;
+  transform: scale(0.7);
+  background:
+    radial-gradient(circle at 38% 32%, rgba(215, 244, 235, 0.2), transparent 36%),
+    linear-gradient(135deg, rgba(109, 127, 130, 0.32), rgba(22, 50, 64, 0.24));
+  opacity: 0.56;
+}
+
+.lightbomb-tile.current {
+  z-index: 1;
+  border-radius: 0;
+  background:
+    linear-gradient(90deg, transparent, rgba(110, 236, 241, 0.18), transparent),
+    repeating-linear-gradient(90deg, rgba(120, 236, 239, 0.18) 0 7px, rgba(29, 103, 114, 0.12) 8px 14px);
+  opacity: 0.7;
+}
+
+.lightbomb-player,
+.lightbomb-enemy,
+.lightbomb-bomb,
+.lightbomb-exit,
+.lightbomb-powerup {
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+
+.lightbomb-player {
+  z-index: 14;
+  width: calc(var(--bomb-cell-px) * 1.18);
+  height: calc(var(--bomb-cell-px) * 1.18);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.72), rgba(255, 210, 97, 0.42) 54%, transparent 72%);
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.35));
+}
+
+.lightbomb-player.shielded {
+  box-shadow:
+    0 0 0 3px rgba(126, 239, 248, 0.48),
+    0 0 24px rgba(126, 239, 248, 0.62);
+}
+
+.lightbomb-player img,
+.lightbomb-enemy img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+}
+
+.lightbomb-enemy {
+  z-index: 12;
+  width: calc(var(--bomb-cell-px) * 1.12);
+  height: calc(var(--bomb-cell-px) * 1.12);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  filter: drop-shadow(0 7px 10px rgba(0, 0, 0, 0.32));
+}
+
+.lightbomb-enemy.urchin img,
+.lightbomb-enemy.anemone img {
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.lightbomb-bomb {
+  z-index: 10;
+  width: calc(var(--bomb-cell-px) * 0.9);
+  height: calc(var(--bomb-cell-px) * 0.9);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 27%, rgba(255, 255, 255, 0.95), rgba(255, 239, 155, 0.85) 17%, rgba(77, 223, 230, 0.82) 48%, rgba(30, 52, 96, 0.96) 70%),
+    conic-gradient(from 0deg, rgba(255, 233, 112, 0.9), rgba(94, 236, 244, 0.92), rgba(180, 116, 255, 0.9), rgba(255, 233, 112, 0.9));
+  box-shadow:
+    0 0 0 2px rgba(255, 239, 146, 0.22),
+    0 0 16px rgba(117, 236, 244, 0.76);
+  animation: lightBombPulse 0.75s ease-in-out infinite;
+}
+
+.lightbomb-bomb.remote {
+  box-shadow:
+    0 0 0 2px rgba(255, 239, 146, 0.24),
+    0 0 20px rgba(194, 136, 255, 0.82);
+}
+
+.lightbomb-explosion {
+  position: absolute;
+  z-index: 11;
+  border-radius: 5px;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.98) 0 18%, rgba(255, 234, 122, 0.86) 19% 46%, rgba(111, 237, 246, 0.62) 47% 72%, transparent 73%);
+  box-shadow:
+    0 0 18px rgba(255, 232, 126, 0.82),
+    0 0 30px rgba(100, 234, 245, 0.58);
+  animation: lightBlast 0.43s ease-out both;
+}
+
+.lightbomb-powerup {
+  z-index: 13;
+  width: calc(var(--bomb-cell-px) * 0.92);
+  height: calc(var(--bomb-cell-px) * 0.92);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #071724;
+  background:
+    radial-gradient(circle at 32% 25%, rgba(255, 255, 255, 0.98), rgba(255, 235, 133, 0.76) 34%, rgba(95, 231, 240, 0.9) 68%);
+  box-shadow:
+    0 0 0 2px rgba(255, 242, 154, 0.28),
+    0 0 14px rgba(117, 236, 244, 0.74);
+  font-weight: 950;
+  animation: cityPowerup 1s ease-in-out infinite;
+}
+
+.lightbomb-exit {
+  z-index: 9;
+  width: calc(var(--bomb-cell-px) * 1.05);
+  height: calc(var(--bomb-cell-px) * 1.05);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.95), rgba(255, 229, 117, 0.66) 30%, transparent 31%),
+    linear-gradient(180deg, rgba(112, 234, 240, 0.9), rgba(36, 78, 114, 0.92));
+  box-shadow:
+    0 0 0 2px rgba(255, 234, 133, 0.3),
+    0 0 22px rgba(119, 235, 246, 0.7);
+}
+
+.lightbomb-hud {
+  position: absolute;
+  z-index: 20;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  pointer-events: none;
+}
+
+.lightbomb-hud span {
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 4px 5px;
+  border-radius: 8px;
+  color: #defaff;
+  background: rgba(4, 18, 30, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(181, 235, 243, 0.18);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.lightbomb-notice {
+  position: absolute;
+  z-index: 24;
+  top: 52px;
+  left: 50%;
+  min-width: 94px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  color: #071724;
+  background: linear-gradient(135deg, rgba(255, 237, 139, 0.98), rgba(111, 236, 244, 0.96));
+  box-shadow:
+    0 14px 26px rgba(0, 0, 0, 0.34),
+    0 0 24px rgba(123, 235, 246, 0.48);
+  font-size: 15px;
+  font-weight: 950;
+  text-align: center;
+  pointer-events: none;
+  animation: cityNotice 1.45s ease-out both;
+}
+
+.lightbomb-controls {
+  position: absolute;
+  z-index: 22;
+  left: 6px;
+  bottom: 6px;
+  display: grid;
+  width: 102px;
+  height: 102px;
+  grid-template-columns: repeat(3, 29px);
+  grid-template-rows: repeat(3, 29px);
+  align-content: center;
+  justify-content: center;
+  gap: 3px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 230, 132, 0.22) 0 21%, transparent 22%),
+    radial-gradient(circle at 50% 50%, rgba(18, 73, 77, 0.84), rgba(4, 22, 39, 0.74) 66%, rgba(6, 17, 31, 0.42) 72%);
+  box-shadow:
+    inset 0 0 0 1px rgba(178, 232, 244, 0.22),
+    0 12px 24px rgba(0, 0, 0, 0.3);
+  touch-action: none;
+  user-select: none;
+}
+
+.lightbomb-controls button,
+.lightbomb-action {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 8px;
+  color: #eafcff;
+  background: rgba(5, 26, 41, 0.78);
+  box-shadow:
+    inset 0 0 0 1px rgba(178, 232, 244, 0.24),
+    0 8px 14px rgba(0, 0, 0, 0.22);
+}
+
+.lightbomb-controls button {
+  pointer-events: none;
+}
+
+.lightbomb-controls button:first-child {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.lightbomb-controls button:nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.lightbomb-controls button:nth-child(3) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.lightbomb-controls button:nth-child(4) {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.lightbomb-controls.active-up button:first-child,
+.lightbomb-controls.active-left button:nth-child(2),
+.lightbomb-controls.active-right button:nth-child(3),
+.lightbomb-controls.active-down button:nth-child(4) {
+  color: #092130;
+  background: linear-gradient(180deg, rgba(255, 236, 138, 0.98), rgba(83, 222, 232, 0.94));
+}
+
+.lightbomb-action {
+  position: absolute;
+  z-index: 22;
+  right: 14px;
+  bottom: 28px;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  color: #1e1607;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.94), transparent 20%),
+    linear-gradient(135deg, #ffed91, #f0a927);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.34),
+    0 0 0 3px rgba(255, 229, 122, 0.2),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.52);
+  touch-action: none;
+  user-select: none;
+}
+
+.lightbomb-action.remote {
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.94), transparent 20%),
+    linear-gradient(135deg, #f2d7ff, #8deaff);
+}
+
+.lightbomb-result {
+  position: absolute;
+  z-index: 28;
+  left: 34px;
+  right: 34px;
+  bottom: 42px;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(4, 15, 26, 0.92);
+  box-shadow:
+    0 20px 42px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(182, 236, 243, 0.28);
+}
+
+.lightbomb-result strong {
+  font-size: 20px;
+}
+
+.lightbomb-result button {
+  min-width: 118px;
+  min-height: 42px;
+  padding: 0 16px;
+  background: linear-gradient(180deg, rgba(255, 234, 141, 0.98), rgba(111, 217, 231, 0.96));
+  color: #162838;
+}
+
+@keyframes lightBombPulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(0.92);
+  }
+
+  50% {
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+}
+
+@keyframes lightBlast {
+  0% {
+    opacity: 0;
+    transform: scale(0.58);
+  }
+
+  24% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
   }
 }
 

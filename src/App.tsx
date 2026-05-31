@@ -6,7 +6,7 @@ function assetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
 }
 
-type Screen = 'title' | 'map' | 'gallery' | 'video' | 'combat' | 'victory' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city';
+type Screen = 'title' | 'map' | 'gallery' | 'video' | 'combat' | 'victory' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city' | 'lightbomb';
 type Cutin = {
   title: string;
   image: string;
@@ -222,6 +222,75 @@ type CityNotice = {
   kind: CityNoticeKind;
   text: string;
 };
+
+type LightBombTileKind = 'solid' | 'soft' | 'rubble' | 'current';
+type LightBombTile = {
+  id: number;
+  kind: LightBombTileKind;
+  row: number;
+  col: number;
+};
+type LightBombPowerupKind = 'flame' | 'bomb' | 'speed' | 'kick' | 'remote' | 'shield';
+type LightBombPowerup = {
+  id: number;
+  kind: LightBombPowerupKind;
+  row: number;
+  col: number;
+};
+type LightBombEnemyKind = 'squid' | 'urchin' | 'anemone';
+type LightBombEnemy = {
+  id: number;
+  kind: LightBombEnemyKind;
+  row: number;
+  col: number;
+  x: number;
+  y: number;
+  dir: CityDirection;
+  moveAt: number;
+};
+type LightBombPlayer = {
+  row: number;
+  col: number;
+  x: number;
+  y: number;
+  dir: CityDirection;
+  range: number;
+  maxBombs: number;
+  moveMs: number;
+  kick: boolean;
+  shieldUntil: number;
+  remoteUntil: number;
+};
+type LightBombBomb = {
+  id: number;
+  row: number;
+  col: number;
+  range: number;
+  explodeAt: number;
+  remote: boolean;
+};
+type LightBombExplosion = {
+  id: number;
+  row: number;
+  col: number;
+  expiresAt: number;
+};
+type LightBombExit = {
+  row: number;
+  col: number;
+};
+type LightBombLevel = {
+  tiles: LightBombTile[];
+  hiddenPowerups: LightBombPowerup[];
+  enemies: LightBombEnemy[];
+  exit: LightBombExit;
+};
+type LightBombStatus = 'playing' | 'won' | 'lost';
+type LightBombNotice = {
+  id: number;
+  kind: LightBombPowerupKind | 'door' | 'hit';
+  text: string;
+} | null;
 type BreakoutPowerupKind = 'split2' | 'gun' | 'split5' | 'giant' | 'grow' | 'wide' | 'narrow';
 
 type BreakoutPowerup = {
@@ -278,6 +347,8 @@ const assets = {
     core: assetUrl('/assets/mobile/bosses/giant-garbage-anemone-core-v01.webp'),
     hit: assetUrl('/assets/mobile/bosses/giant-garbage-anemone-hit-v01.webp'),
   },
+  virusUrchin: assetUrl('/assets/mobile/cards/virus-purple-urchin-picture-card-v01.webp'),
+  garbageAnemone: assetUrl('/assets/mobile/cards/garbage-anemone-picture-card-v01.webp'),
   heroCutin: assetUrl('/assets/mobile/cutins/double-band-samurai-core-breaker-v01.webp'),
   bossSweepCutin: assetUrl('/assets/mobile/cutins/giant-garbage-anemone-tentacle-sweep-v01.webp'),
   bossCoreCutin: assetUrl('/assets/mobile/cutins/giant-garbage-anemone-toxic-core-v01.webp'),
@@ -650,6 +721,45 @@ const cityPowerupMessages: Record<CityPowerupKind, string> = {
   pierce: '穿甲啟動',
   repair: '全體修復',
 };
+const lightBombRows = 31;
+const lightBombCols = 31;
+const lightBombViewRows = 25;
+const lightBombViewCols = 15;
+const lightBombPlayerStart: LightBombPlayer = {
+  row: 1,
+  col: 1,
+  x: 1,
+  y: 1,
+  dir: 'down',
+  range: 2,
+  maxBombs: 1,
+  moveMs: 178,
+  kick: false,
+  shieldUntil: 0,
+  remoteUntil: 0,
+};
+const lightBombPowerupLabels: Record<LightBombPowerupKind, string> = {
+  flame: '火',
+  bomb: '彈',
+  speed: '速',
+  kick: '踢',
+  remote: '遙',
+  shield: '盾',
+};
+const lightBombPowerupText: Record<LightBombPowerupKind, string> = {
+  flame: '火力 +1',
+  bomb: '光爆 +1',
+  speed: '速度提升',
+  kick: '踢爆彈',
+  remote: '遙控光爆',
+  shield: '護盾展開',
+};
+const lightBombEnemyDelays: Record<LightBombEnemyKind, number> = {
+  squid: 520,
+  urchin: 430,
+  anemone: 690,
+};
+const lightBombDirections: CityDirection[] = ['up', 'down', 'left', 'right'];
 
 function sameCell(a: SnakeCell, b: SnakeCell) {
   return a.row === b.row && a.col === b.col;
@@ -985,6 +1095,126 @@ function citySmoothVisual<T extends { x: number; y: number }>(previous: T | unde
     x: cityVisualStep(previous.x, target.x, dt),
     y: cityVisualStep(previous.y, target.y, dt),
   };
+}
+
+function lightBombKey(row: number, col: number) {
+  return `${row}-${col}`;
+}
+
+function lightBombCellStyle(row: number, col: number): CSSProperties {
+  return {
+    left: `${(col / lightBombCols) * 100}%`,
+    top: `${(row / lightBombRows) * 100}%`,
+    width: `${100 / lightBombCols}%`,
+    height: `${100 / lightBombRows}%`,
+  };
+}
+
+function lightBombTokenStyle(x: number, y: number): CSSProperties {
+  return {
+    left: `${((x + 0.5) / lightBombCols) * 100}%`,
+    top: `${((y + 0.5) / lightBombRows) * 100}%`,
+  };
+}
+
+function lightBombShuffle<T>(items: T[]) {
+  return [...items].sort(() => Math.random() - 0.5);
+}
+
+function lightBombProtected(row: number, col: number) {
+  return (
+    (row <= 3 && col <= 3) ||
+    (row === 1 && col === 4) ||
+    (row === 4 && col === 1)
+  );
+}
+
+function lightBombTileAt(tiles: LightBombTile[], row: number, col: number) {
+  return tiles.find((tile) => tile.row === row && tile.col === col);
+}
+
+function lightBombBlocks(tile?: LightBombTile) {
+  return tile?.kind === 'solid' || tile?.kind === 'soft';
+}
+
+function createLightBombEnemy(id: number, kind: LightBombEnemyKind, row: number, col: number): LightBombEnemy {
+  return {
+    id,
+    kind,
+    row,
+    col,
+    x: col,
+    y: row,
+    dir: lightBombDirections[Math.floor(Math.random() * lightBombDirections.length)],
+    moveAt: 650 + Math.random() * 850,
+  };
+}
+
+function createLightBombLevel(): LightBombLevel {
+  const tiles: LightBombTile[] = [];
+  const occupied = new Set<string>();
+  let id = 1;
+  const addTile = (kind: LightBombTileKind, row: number, col: number) => {
+    const key = lightBombKey(row, col);
+    if (occupied.has(key)) return;
+    occupied.add(key);
+    tiles.push({ id: id++, kind, row, col });
+  };
+
+  const softCells: { row: number; col: number }[] = [];
+  const openCells: { row: number; col: number }[] = [];
+  for (let row = 0; row < lightBombRows; row += 1) {
+    for (let col = 0; col < lightBombCols; col += 1) {
+      const border = row === 0 || col === 0 || row === lightBombRows - 1 || col === lightBombCols - 1;
+      const pillar = row % 2 === 0 && col % 2 === 0;
+      if (border || pillar) {
+        addTile('solid', row, col);
+        continue;
+      }
+      if (lightBombProtected(row, col)) {
+        openCells.push({ row, col });
+        continue;
+      }
+      if (Math.random() < 0.62) {
+        addTile('soft', row, col);
+        softCells.push({ row, col });
+      } else {
+        openCells.push({ row, col });
+      }
+    }
+  }
+
+  lightBombShuffle(openCells)
+    .slice(0, 46)
+    .forEach((cell) => {
+      if (!lightBombProtected(cell.row, cell.col)) addTile(Math.random() < 0.74 ? 'rubble' : 'current', cell.row, cell.col);
+    });
+
+  const farSoft = lightBombShuffle(softCells.filter((cell) => cell.row + cell.col > 20));
+  const exit = farSoft[0] ?? { row: lightBombRows - 2, col: lightBombCols - 2 };
+  const powerupKinds: LightBombPowerupKind[] = ['flame', 'flame', 'bomb', 'bomb', 'speed', 'speed', 'kick', 'remote', 'shield'];
+  const hiddenPowerups = lightBombShuffle(softCells.filter((cell) => lightBombKey(cell.row, cell.col) !== lightBombKey(exit.row, exit.col)))
+    .slice(0, 18)
+    .map((cell, index) => ({
+      id: index + 1,
+      row: cell.row,
+      col: cell.col,
+      kind: powerupKinds[index % powerupKinds.length],
+    }));
+
+  const spawnCells = lightBombShuffle(openCells.filter((cell) => Math.abs(cell.row - 1) + Math.abs(cell.col - 1) > 14)).slice(0, 10);
+  const enemyKinds: LightBombEnemyKind[] = ['squid', 'urchin', 'anemone', 'squid', 'urchin', 'anemone', 'squid', 'urchin', 'squid', 'anemone'];
+  const enemies = spawnCells.map((cell, index) => createLightBombEnemy(100 + index, enemyKinds[index % enemyKinds.length], cell.row, cell.col));
+
+  return { tiles, hiddenPowerups, enemies, exit };
+}
+
+function lightBombVisualStep(value: number, target: number, dt: number, moveMs: number) {
+  return cityApproach(value, target, dt / moveMs);
+}
+
+function lightBombCellsEqual(a: { row: number; col: number }, b: { row: number; col: number }) {
+  return a.row === b.row && a.col === b.col;
 }
 
 function isReverseDirection(current: SnakeDirection, next: SnakeDirection) {
@@ -1356,6 +1586,10 @@ export default function App() {
             onSnake={() => openVideoLeadIn(videoLeadIns.tideTribe)}
             onTower={() => openVideoLeadIn(videoLeadIns.abyssTower)}
             onCity={() => openVideoLeadIn(videoLeadIns.underseaCity)}
+            onLightBomb={() => {
+              void startOceanBgm();
+              setScreen('lightbomb');
+            }}
           />
         )}
         {screen === 'gallery' && <CharacterGallery onBack={() => setScreen('title')} />}
@@ -1366,6 +1600,7 @@ export default function App() {
         {screen === 'snake' && <TideSnakeGame onBack={() => setScreen('map')} />}
         {screen === 'tower' && <AbyssTowerGame onBack={() => setScreen('map')} />}
         {screen === 'city' && <UnderseaCityGame onBack={() => setScreen('map')} />}
+        {screen === 'lightbomb' && <LightBombMazeGame onBack={() => setScreen('map')} />}
         {screen === 'video' && <VideoLeadIn leadIn={videoLeadIn} onComplete={completeVideoLeadIn} />}
         {screen === 'combat' && (
           <CombatStage
@@ -1411,6 +1646,7 @@ function EpisodeMap({
   onSnake,
   onTower,
   onCity,
+  onLightBomb,
 }: {
   cleared: boolean;
   onBack: () => void;
@@ -1422,6 +1658,7 @@ function EpisodeMap({
   onSnake: () => void;
   onTower: () => void;
   onCity: () => void;
+  onLightBomb: () => void;
 }) {
   const nodes = [
     ['冰晶王城', 'breakout'],
@@ -1432,6 +1669,7 @@ function EpisodeMap({
     ['海潮部落', 'snake'],
     ['深淵高塔', 'tower'],
     ['海底城市', 'city'],
+    ['海光迷宮', 'lightbomb'],
   ];
   return (
     <section className="screen map-screen">
@@ -1458,6 +1696,8 @@ function EpisodeMap({
                             ? onTower
                             : name === '海底城市'
                               ? onCity
+                              : name === '海光迷宮'
+                                ? onLightBomb
                         : undefined
             }
           >
@@ -1481,6 +1721,8 @@ function EpisodeMap({
                             ? '下樓'
                             : state === 'city'
                               ? '坦克'
+                              : state === 'lightbomb'
+                                ? '光爆'
                     : state === 'coming'
                       ? '劇情'
                       : '鎖定'}
@@ -3934,6 +4176,451 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             <div className="city-result">
               <strong>{status === 'won' ? '城市守住' : '防線失守'}</strong>
               <button onClick={restart}>{status === 'won' ? '再守一次' : '重新布防'}</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function LightBombMazeGame({ onBack }: { onBack: () => void }) {
+  const firstLevel = useMemo(() => createLightBombLevel(), []);
+  const arenaRef = useRef<HTMLDivElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const lastTime = useRef<number | null>(null);
+  const nextId = useRef(1000);
+  const noticeId = useRef(0);
+  const playerRef = useRef<LightBombPlayer>({ ...lightBombPlayerStart });
+  const tilesRef = useRef<LightBombTile[]>(firstLevel.tiles);
+  const hiddenPowerupsRef = useRef<LightBombPowerup[]>(firstLevel.hiddenPowerups);
+  const powerupsRef = useRef<LightBombPowerup[]>([]);
+  const enemiesRef = useRef<LightBombEnemy[]>(firstLevel.enemies);
+  const bombsRef = useRef<LightBombBomb[]>([]);
+  const explosionsRef = useRef<LightBombExplosion[]>([]);
+  const exitRef = useRef<LightBombExit>(firstLevel.exit);
+  const exitRevealedRef = useRef(false);
+  const statusRef = useRef<LightBombStatus>('playing');
+  const heldDirectionRef = useRef<CityDirection | null>(null);
+  const movePointerRef = useRef<number | null>(null);
+  const remoteTriggerRef = useRef<number | null>(null);
+  const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
+  const [tiles, setTiles] = useState<LightBombTile[]>(firstLevel.tiles);
+  const [player, setPlayer] = useState<LightBombPlayer>({ ...lightBombPlayerStart });
+  const [enemies, setEnemies] = useState<LightBombEnemy[]>(firstLevel.enemies);
+  const [bombs, setBombs] = useState<LightBombBomb[]>([]);
+  const [explosions, setExplosions] = useState<LightBombExplosion[]>([]);
+  const [powerups, setPowerups] = useState<LightBombPowerup[]>([]);
+  const [exit, setExit] = useState<LightBombExit>(firstLevel.exit);
+  const [exitVisible, setExitVisible] = useState(false);
+  const [status, setStatus] = useState<LightBombStatus>('playing');
+  const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
+  const [notice, setNotice] = useState<LightBombNotice>(null);
+
+  const showNotice = useCallback((kind: NonNullable<LightBombNotice>['kind'], text: string) => {
+    noticeId.current += 1;
+    setNotice({ id: noticeId.current, kind, text });
+  }, []);
+
+  const applyLevel = useCallback((level: LightBombLevel) => {
+    playerRef.current = { ...lightBombPlayerStart };
+    tilesRef.current = level.tiles;
+    hiddenPowerupsRef.current = level.hiddenPowerups;
+    powerupsRef.current = [];
+    enemiesRef.current = level.enemies;
+    bombsRef.current = [];
+    explosionsRef.current = [];
+    exitRef.current = level.exit;
+    exitRevealedRef.current = false;
+    statusRef.current = 'playing';
+    heldDirectionRef.current = null;
+    movePointerRef.current = null;
+    remoteTriggerRef.current = null;
+    lastTime.current = null;
+    nextId.current = 1000;
+    setTiles(level.tiles);
+    setPlayer({ ...lightBombPlayerStart });
+    setEnemies(level.enemies);
+    setBombs([]);
+    setExplosions([]);
+    setPowerups([]);
+    setExit(level.exit);
+    setExitVisible(false);
+    setStatus('playing');
+    setPadDirection(null);
+    showNotice('door', '新迷宮');
+  }, [showNotice]);
+
+  const restart = useCallback(() => {
+    applyLevel(createLightBombLevel());
+  }, [applyLevel]);
+
+  useEffect(() => {
+    const arena = arenaRef.current;
+    if (!arena) return;
+    const updateSize = () => {
+      const rect = arena.getBoundingClientRect();
+      setArenaSize({ width: rect.width, height: rect.height });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(arena);
+    return () => observer.disconnect();
+  }, []);
+
+  const canEnterCell = useCallback((row: number, col: number, bombs: LightBombBomb[], enemies: LightBombEnemy[], ignoreEnemyId?: number) => {
+    if (row < 0 || col < 0 || row >= lightBombRows || col >= lightBombCols) return false;
+    if (lightBombBlocks(lightBombTileAt(tilesRef.current, row, col))) return false;
+    if (bombs.some((bomb) => bomb.row === row && bomb.col === col)) return false;
+    return !enemies.some((enemy) => enemy.id !== ignoreEnemyId && enemy.row === row && enemy.col === col);
+  }, []);
+
+  const tryKickBomb = useCallback((bomb: LightBombBomb, direction: CityDirection, bombs: LightBombBomb[], enemies: LightBombEnemy[]) => {
+    if (!playerRef.current.kick) return bombs;
+    const vector = cityDirectionVector(direction);
+    const nextRow = bomb.row + vector.y;
+    const nextCol = bomb.col + vector.x;
+    if (!canEnterCell(nextRow, nextCol, bombs.filter((item) => item.id !== bomb.id), enemies)) return bombs;
+    showNotice('kick', '踢開');
+    return bombs.map((item) => (item.id === bomb.id ? { ...item, row: nextRow, col: nextCol } : item));
+  }, [canEnterCell, showNotice]);
+
+  const tryMovePlayer = useCallback((direction: CityDirection) => {
+    const player = { ...playerRef.current, dir: direction };
+    if (Math.abs(player.x - player.col) + Math.abs(player.y - player.row) > 0.08) {
+      playerRef.current = player;
+      return;
+    }
+    const vector = cityDirectionVector(direction);
+    const nextRow = player.row + vector.y;
+    const nextCol = player.col + vector.x;
+    const blockingBomb = bombsRef.current.find((bomb) => bomb.row === nextRow && bomb.col === nextCol);
+    if (blockingBomb) {
+      const nextBombs = tryKickBomb(blockingBomb, direction, bombsRef.current, enemiesRef.current);
+      bombsRef.current = nextBombs;
+      setBombs(nextBombs);
+      if (nextBombs.some((bomb) => bomb.row === nextRow && bomb.col === nextCol)) {
+        playerRef.current = player;
+        return;
+      }
+    }
+    if (canEnterCell(nextRow, nextCol, bombsRef.current, enemiesRef.current)) {
+      player.row = nextRow;
+      player.col = nextCol;
+    }
+    playerRef.current = player;
+  }, [canEnterCell, tryKickBomb]);
+
+  const placeOrTriggerBomb = useCallback(() => {
+    if (statusRef.current !== 'playing') return;
+    const now = performance.now();
+    const player = playerRef.current;
+    const remoteBomb = bombsRef.current.find((bomb) => bomb.remote);
+    if (remoteBomb && player.remoteUntil > now && bombsRef.current.length >= player.maxBombs) {
+      remoteTriggerRef.current = remoteBomb.id;
+      return;
+    }
+    if (bombsRef.current.length >= player.maxBombs || bombsRef.current.some((bomb) => bomb.row === player.row && bomb.col === player.col)) return;
+    const remote = player.remoteUntil > now;
+    const nextBomb: LightBombBomb = {
+      id: nextId.current++,
+      row: player.row,
+      col: player.col,
+      range: player.range,
+      remote,
+      explodeAt: now + (remote ? 8000 : 2350),
+    };
+    bombsRef.current = [...bombsRef.current, nextBomb];
+    setBombs(bombsRef.current);
+  }, []);
+
+  const directionFromPad = useCallback((clientX: number, clientY: number, target: HTMLElement): CityDirection | null => {
+    const rect = target.getBoundingClientRect();
+    const dx = clientX - (rect.left + rect.width / 2);
+    const dy = clientY - (rect.top + rect.height / 2);
+    if (Math.hypot(dx, dy) < Math.min(rect.width, rect.height) * 0.16) return null;
+    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
+    return dy > 0 ? 'down' : 'up';
+  }, []);
+
+  const holdDirection = useCallback((direction: CityDirection | null) => {
+    heldDirectionRef.current = direction;
+    setPadDirection(direction);
+    if (direction) tryMovePlayer(direction);
+  }, [tryMovePlayer]);
+
+  const updatePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    holdDirection(directionFromPad(event.clientX, event.clientY, event.currentTarget));
+  }, [directionFromPad, holdDirection]);
+
+  const releasePad = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
+    if (event && movePointerRef.current !== null && movePointerRef.current !== event.pointerId) return;
+    movePointerRef.current = null;
+    holdDirection(null);
+  }, [holdDirection]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      const direction = event.key === 'ArrowUp' || key === 'w' ? 'up' : event.key === 'ArrowDown' || key === 's' ? 'down' : event.key === 'ArrowLeft' || key === 'a' ? 'left' : event.key === 'ArrowRight' || key === 'd' ? 'right' : null;
+      if (direction) {
+        holdDirection(direction);
+        event.preventDefault();
+      }
+      if (event.key === ' ' || key === 'j' || key === 'k') {
+        placeOrTriggerBomb();
+        event.preventDefault();
+      }
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      const direction = event.key === 'ArrowUp' || key === 'w' ? 'up' : event.key === 'ArrowDown' || key === 's' ? 'down' : event.key === 'ArrowLeft' || key === 'a' ? 'left' : event.key === 'ArrowRight' || key === 'd' ? 'right' : null;
+      if (direction && heldDirectionRef.current === direction) holdDirection(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [holdDirection, placeOrTriggerBomb]);
+
+  useEffect(() => {
+    const tick = (time: number) => {
+      const last = lastTime.current ?? time;
+      const dt = Math.min(34, time - last);
+      lastTime.current = time;
+
+      if (statusRef.current === 'playing') {
+        const held = heldDirectionRef.current;
+        if (held) tryMovePlayer(held);
+
+        let currentPlayer = { ...playerRef.current };
+        currentPlayer.x = lightBombVisualStep(currentPlayer.x, currentPlayer.col, dt, currentPlayer.moveMs);
+        currentPlayer.y = lightBombVisualStep(currentPlayer.y, currentPlayer.row, dt, currentPlayer.moveMs);
+
+        let nextTiles = tilesRef.current;
+        let nextHidden = hiddenPowerupsRef.current;
+        let nextPowerups = powerupsRef.current;
+        let nextBombs = bombsRef.current;
+        let nextExplosions = explosionsRef.current.filter((explosion) => explosion.expiresAt > time);
+        let nextEnemies = enemiesRef.current.map((enemy) => ({ ...enemy }));
+        let exitRevealed = exitRevealedRef.current;
+        const wasExitVisible = exitRevealedRef.current && enemiesRef.current.length === 0;
+        const explodeQueue = nextBombs.filter((bomb) => bomb.explodeAt <= time || bomb.id === remoteTriggerRef.current).map((bomb) => bomb.id);
+        remoteTriggerRef.current = null;
+
+        const revealCell = (row: number, col: number) => {
+          const powerupIndex = nextHidden.findIndex((powerup) => powerup.row === row && powerup.col === col);
+          if (powerupIndex >= 0) {
+            nextPowerups = [...nextPowerups, { ...nextHidden[powerupIndex], id: nextId.current++ }];
+            nextHidden = nextHidden.filter((_, index) => index !== powerupIndex);
+          }
+          if (exitRef.current.row === row && exitRef.current.col === col) {
+            exitRevealed = true;
+            showNotice('door', '門印浮現');
+          }
+        };
+
+        const explodeBomb = (bombId: number) => {
+          const bomb = nextBombs.find((item) => item.id === bombId);
+          if (!bomb) return;
+          nextBombs = nextBombs.filter((item) => item.id !== bomb.id);
+          const cells = [{ row: bomb.row, col: bomb.col }];
+          lightBombDirections.forEach((direction) => {
+            const vector = cityDirectionVector(direction);
+            for (let step = 1; step <= bomb.range; step += 1) {
+              const row = bomb.row + vector.y * step;
+              const col = bomb.col + vector.x * step;
+              const tile = lightBombTileAt(nextTiles, row, col);
+              if (tile?.kind === 'solid') break;
+              cells.push({ row, col });
+              const chained = nextBombs.find((item) => item.row === row && item.col === col);
+              if (chained) explodeQueue.push(chained.id);
+              if (tile?.kind === 'soft') {
+                nextTiles = nextTiles.filter((item) => item.id !== tile.id);
+                revealCell(row, col);
+                break;
+              }
+            }
+          });
+          nextExplosions = [
+            ...nextExplosions,
+            ...cells.map((cell) => ({ id: nextId.current++, row: cell.row, col: cell.col, expiresAt: time + 430 })),
+          ].slice(-80);
+        };
+
+        while (explodeQueue.length) explodeBomb(explodeQueue.shift() ?? -1);
+
+        nextEnemies = nextEnemies.map((enemy) => {
+          const nextEnemy = { ...enemy };
+          const settled = Math.abs(nextEnemy.x - nextEnemy.col) + Math.abs(nextEnemy.y - nextEnemy.row) < 0.05;
+          if (settled && time >= nextEnemy.moveAt) {
+            const towardPlayer: CityDirection[] = Math.abs(currentPlayer.col - nextEnemy.col) > Math.abs(currentPlayer.row - nextEnemy.row)
+              ? [currentPlayer.col > nextEnemy.col ? 'right' : 'left', currentPlayer.row > nextEnemy.row ? 'down' : 'up']
+              : [currentPlayer.row > nextEnemy.row ? 'down' : 'up', currentPlayer.col > nextEnemy.col ? 'right' : 'left'];
+            const choices = nextEnemy.kind === 'squid' && Math.random() < 0.72 ? towardPlayer : lightBombShuffle(lightBombDirections);
+            const direction = choices.find((choice) => {
+              const vector = cityDirectionVector(choice);
+              return canEnterCell(nextEnemy.row + vector.y, nextEnemy.col + vector.x, nextBombs, nextEnemies, nextEnemy.id);
+            });
+            if (direction) {
+              const vector = cityDirectionVector(direction);
+              nextEnemy.row += vector.y;
+              nextEnemy.col += vector.x;
+              nextEnemy.dir = direction;
+            }
+            nextEnemy.moveAt = time + lightBombEnemyDelays[nextEnemy.kind] + Math.random() * 260;
+          }
+          const moveMs = lightBombEnemyDelays[nextEnemy.kind] * 0.75;
+          nextEnemy.x = lightBombVisualStep(nextEnemy.x, nextEnemy.col, dt, moveMs);
+          nextEnemy.y = lightBombVisualStep(nextEnemy.y, nextEnemy.row, dt, moveMs);
+          return nextEnemy;
+        });
+
+        const explosionHits = (row: number, col: number) => nextExplosions.some((explosion) => explosion.row === row && explosion.col === col);
+        nextEnemies = nextEnemies.filter((enemy) => !explosionHits(enemy.row, enemy.col));
+        nextPowerups = nextPowerups.filter((powerup) => {
+          if (!lightBombCellsEqual(powerup, currentPlayer)) return true;
+          const player = currentPlayer;
+          if (powerup.kind === 'flame') player.range = Math.min(7, player.range + 1);
+          if (powerup.kind === 'bomb') player.maxBombs = Math.min(5, player.maxBombs + 1);
+          if (powerup.kind === 'speed') player.moveMs = Math.max(112, player.moveMs - 18);
+          if (powerup.kind === 'kick') player.kick = true;
+          if (powerup.kind === 'remote') player.remoteUntil = time + 20000;
+          if (powerup.kind === 'shield') player.shieldUntil = time + 7000;
+          showNotice(powerup.kind, lightBombPowerupText[powerup.kind]);
+          currentPlayer = player;
+          return false;
+        });
+
+        const protectedByShield = currentPlayer.shieldUntil > time;
+        if (!protectedByShield && (explosionHits(currentPlayer.row, currentPlayer.col) || nextEnemies.some((enemy) => lightBombCellsEqual(enemy, currentPlayer)))) {
+          statusRef.current = 'lost';
+          setStatus('lost');
+          showNotice('hit', '再挑戰');
+        }
+
+        const visibleExit = exitRevealed && nextEnemies.length === 0;
+        if (visibleExit && !wasExitVisible) showNotice('door', '出口開啟');
+        if (visibleExit && lightBombCellsEqual(currentPlayer, exitRef.current)) {
+          statusRef.current = 'won';
+          setStatus('won');
+          showNotice('door', '通路開啟');
+        }
+
+        playerRef.current = currentPlayer;
+        tilesRef.current = nextTiles;
+        hiddenPowerupsRef.current = nextHidden;
+        powerupsRef.current = nextPowerups;
+        bombsRef.current = nextBombs;
+        explosionsRef.current = nextExplosions;
+        enemiesRef.current = nextEnemies;
+        exitRevealedRef.current = exitRevealed;
+        setPlayer(currentPlayer);
+        setTiles(nextTiles);
+        setPowerups(nextPowerups);
+        setBombs(nextBombs);
+        setExplosions(nextExplosions);
+        setEnemies(nextEnemies);
+        setExitVisible(visibleExit);
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [canEnterCell, showNotice, tryMovePlayer]);
+
+  const cellPx = Math.max(17, Math.min((arenaSize.width || 360) / lightBombViewCols, (arenaSize.height || 520) / lightBombViewRows));
+  const worldPx = cellPx * lightBombCols;
+  const camera = {
+    x: clamp(player.x - lightBombViewCols / 2, 0, lightBombCols - lightBombViewCols),
+    y: clamp(player.y - lightBombViewRows / 2, 0, lightBombRows - lightBombViewRows),
+  };
+  const viewportStyle: CSSProperties = {
+    width: `${cellPx * lightBombViewCols}px`,
+    height: `${cellPx * lightBombViewRows}px`,
+    ['--bomb-cell-px' as string]: `${cellPx}px`,
+  };
+  const worldStyle: CSSProperties = {
+    width: `${worldPx}px`,
+    height: `${worldPx}px`,
+    transform: `translate(${-camera.x * cellPx}px, ${-camera.y * cellPx}px)`,
+  };
+  const shielded = player.shieldUntil > performance.now();
+  const remote = player.remoteUntil > performance.now();
+
+  return (
+    <section className="screen lightbomb-screen">
+      <div className="lightbomb-nav">
+        <button className="icon-button" onClick={onBack} aria-label="返回">
+          <ChevronLeft size={20} />
+        </button>
+        <button className="icon-button" onClick={restart} aria-label="重新開始">
+          <RotateCcw size={20} />
+        </button>
+      </div>
+      <div className="lightbomb-arena" ref={arenaRef}>
+        <div className="lightbomb-viewport" style={viewportStyle}>
+          <div className="lightbomb-world" style={worldStyle}>
+            {tiles.map((tile) => <span className={`lightbomb-tile ${tile.kind}`} key={tile.id} style={lightBombCellStyle(tile.row, tile.col)} />)}
+            {exitVisible && <span className="lightbomb-exit" style={lightBombTokenStyle(exit.col, exit.row)} />}
+            {powerups.map((powerup) => (
+              <span className={`lightbomb-powerup ${powerup.kind}`} key={powerup.id} style={lightBombTokenStyle(powerup.col, powerup.row)}>
+                {lightBombPowerupLabels[powerup.kind]}
+              </span>
+            ))}
+            {bombs.map((bomb) => (
+              <span className={`lightbomb-bomb ${bomb.remote ? 'remote' : ''}`} key={bomb.id} style={lightBombTokenStyle(bomb.col, bomb.row)} />
+            ))}
+            {explosions.map((explosion) => <span className="lightbomb-explosion" key={explosion.id} style={lightBombCellStyle(explosion.row, explosion.col)} />)}
+            {enemies.map((enemy) => (
+              <span className={`lightbomb-enemy ${enemy.kind} dir-${enemy.dir}`} key={enemy.id} style={lightBombTokenStyle(enemy.x, enemy.y)}>
+                <img src={enemy.kind === 'squid' ? assets.mechaSquid[enemy.dir] : enemy.kind === 'urchin' ? assets.virusUrchin : assets.garbageAnemone} alt="" />
+              </span>
+            ))}
+            <span className={`lightbomb-player dir-${player.dir} ${shielded ? 'shielded' : ''}`} style={lightBombTokenStyle(player.x, player.y)}>
+              <img src={assets.princeIcon} alt="" />
+            </span>
+          </div>
+          <div className="lightbomb-hud">
+            <span>敵 {enemies.length}</span>
+            <span>光爆 {bombs.length}/{player.maxBombs}</span>
+            <span>火力 {player.range}</span>
+          </div>
+          {notice && <div className={`lightbomb-notice ${notice.kind}`} key={notice.id}>{notice.text}</div>}
+          <div
+            className={`lightbomb-controls ${padDirection ? `active-${padDirection}` : ''}`}
+            aria-label="方向控制"
+            onPointerDown={(event) => {
+              if (movePointerRef.current !== null) return;
+              movePointerRef.current = event.pointerId;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              updatePad(event);
+            }}
+            onPointerMove={(event) => {
+              if (movePointerRef.current === event.pointerId) updatePad(event);
+            }}
+            onPointerUp={releasePad}
+            onPointerCancel={releasePad}
+            onLostPointerCapture={releasePad}
+          >
+            <button type="button" tabIndex={-1} aria-label="向上"><ChevronUp size={18} /></button>
+            <button type="button" tabIndex={-1} aria-label="向左"><ChevronLeft size={18} /></button>
+            <button type="button" tabIndex={-1} aria-label="向右"><ChevronRight size={18} /></button>
+            <button type="button" tabIndex={-1} aria-label="向下"><ChevronDown size={18} /></button>
+          </div>
+          <button className={`lightbomb-action ${remote ? 'remote' : ''}`} onClick={placeOrTriggerBomb} aria-label="放置海光爆彈">
+            <Sparkles size={24} />
+          </button>
+          {status !== 'playing' && (
+            <div className="lightbomb-result">
+              <strong>{status === 'won' ? '通路開啟' : '光爆失誤'}</strong>
+              <button onClick={restart}>{status === 'won' ? '再闖一次' : '重新挑戰'}</button>
             </div>
           )}
         </div>
