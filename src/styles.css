@@ -2349,7 +2349,7 @@ button:disabled {
   width: 100%;
   max-width: 100%;
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
   background:
     radial-gradient(circle at 52% 0%, rgba(104, 219, 233, 0.22), transparent 30%),
     linear-gradient(180deg, #061827 0%, #0b2d34 43%, #050d17 100%);
@@ -2367,31 +2367,27 @@ button:disabled {
   pointer-events: none;
 }
 
-.city-dialogue,
+.city-screen .screen-header {
+  gap: 7px;
+  padding: 8px 10px 4px;
+}
+
+.city-screen .screen-header h1 {
+  font-size: 18px;
+}
+
+.city-screen .icon-button,
+.city-screen .screen-header-action button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
 .city-arena {
   position: relative;
   z-index: 1;
-}
-
-.city-dialogue {
-  min-height: 50px;
-  margin: 0 14px 6px;
-  display: grid;
-  align-items: center;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: rgba(228, 244, 247, 0.94);
-  color: #102232;
-  box-shadow:
-    0 14px 30px rgba(0, 0, 0, 0.24),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.74);
-}
-
-.city-dialogue p {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 900;
-  line-height: 1.25;
 }
 
 .city-arena {
@@ -2399,7 +2395,8 @@ button:disabled {
   min-height: 0;
   display: grid;
   place-items: center;
-  margin: 0 14px 14px;
+  margin: 0;
+  padding: 0 2px 2px;
   overflow: hidden;
   touch-action: none;
   border-radius: 0;
@@ -2409,7 +2406,7 @@ button:disabled {
 .city-viewport {
   position: relative;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 4px;
   background:
     radial-gradient(circle at 50% 52%, rgba(77, 189, 187, 0.18), transparent 28%),
     linear-gradient(180deg, rgba(10, 43, 52, 0.94), rgba(3, 10, 17, 0.98));
@@ -2508,13 +2505,14 @@ button:disabled {
 .city-tile.vent {
   z-index: 1;
   border-radius: 50%;
+  transform: scale(0.72);
   background:
-    radial-gradient(circle at 50% 42%, rgba(255, 248, 191, 0.86) 0 12%, rgba(106, 230, 226, 0.34) 13% 42%, transparent 43%),
-    radial-gradient(circle at 50% 50%, rgba(255, 226, 137, 0.2), transparent 72%);
+    radial-gradient(circle at 50% 42%, rgba(255, 248, 191, 0.5) 0 10%, rgba(106, 230, 226, 0.2) 12% 42%, transparent 43%),
+    radial-gradient(circle at 50% 50%, rgba(255, 226, 137, 0.1), transparent 72%);
   box-shadow:
-    0 0 12px rgba(255, 222, 116, 0.3),
+    0 0 8px rgba(255, 222, 116, 0.16),
     inset 0 0 0 1px rgba(255, 239, 176, 0.18);
-  opacity: 0.82;
+  opacity: 0.58;
 }
 
 .city-tile.trench {
@@ -2682,10 +2680,49 @@ button:disabled {
   z-index: 13;
   width: var(--city-powerup-size);
   height: var(--city-powerup-size);
+  display: grid;
+  place-items: center;
+  overflow: visible;
   border-radius: 50%;
-  object-fit: contain;
+  border: 2px solid rgba(255, 247, 186, 0.86);
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.98), rgba(255, 239, 139, 0.58) 24%, rgba(32, 118, 148, 0.82) 58%, rgba(6, 22, 37, 0.62) 75%),
+    conic-gradient(from 20deg, rgba(255, 231, 120, 0.82), rgba(104, 238, 255, 0.76), rgba(195, 125, 255, 0.78), rgba(255, 231, 120, 0.82));
   pointer-events: none;
-  animation: cityPowerup 1.1s ease-in-out infinite;
+  box-shadow:
+    0 0 0 2px rgba(255, 245, 170, 0.24),
+    0 0 18px rgba(111, 234, 243, 0.72),
+    0 8px 14px rgba(0, 0, 0, 0.34);
+  animation: cityPowerup 0.9s ease-in-out infinite;
+}
+
+.city-powerup::before {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 246, 173, 0.5);
+  animation: cityPowerupRing 1.2s ease-out infinite;
+}
+
+.city-powerup img {
+  width: 126%;
+  height: 126%;
+  object-fit: contain;
+  opacity: 0.68;
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.52));
+}
+
+.city-powerup span {
+  position: absolute;
+  z-index: 2;
+  color: #081724;
+  font-size: max(11px, calc(var(--city-cell-px) * 0.42));
+  font-weight: 950;
+  line-height: 1;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.72),
+    0 0 8px rgba(255, 255, 255, 0.68);
 }
 
 .city-powerup.speed {
@@ -2773,6 +2810,40 @@ button:disabled {
   box-shadow: inset 0 0 0 1px rgba(181, 235, 243, 0.18);
 }
 
+.city-notice {
+  position: absolute;
+  z-index: 24;
+  top: 82px;
+  left: 50%;
+  min-width: 96px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  color: #071724;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(255, 255, 255, 0.95), transparent 28%),
+    linear-gradient(135deg, rgba(255, 236, 139, 0.98), rgba(108, 233, 246, 0.96));
+  box-shadow:
+    0 0 0 2px rgba(255, 243, 163, 0.24),
+    0 14px 26px rgba(0, 0, 0, 0.34),
+    0 0 24px rgba(123, 235, 246, 0.48);
+  font-size: 15px;
+  font-weight: 950;
+  text-align: center;
+  pointer-events: none;
+  animation: cityNotice 1.45s ease-out both;
+}
+
+.city-notice.damage,
+.city-notice.base {
+  color: #fff4f7;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(255, 255, 255, 0.78), transparent 28%),
+    linear-gradient(135deg, rgba(232, 68, 116, 0.96), rgba(94, 41, 130, 0.94));
+  box-shadow:
+    0 14px 26px rgba(0, 0, 0, 0.34),
+    0 0 24px rgba(255, 104, 158, 0.5);
+}
+
 .city-minimap {
   position: absolute;
   z-index: 20;
@@ -2824,16 +2895,16 @@ button:disabled {
 .city-controls {
   position: absolute;
   z-index: 22;
-  left: 8px;
-  bottom: 8px;
+  left: 6px;
+  bottom: 6px;
   display: grid;
-  width: 144px;
-  height: 144px;
-  grid-template-columns: repeat(3, 42px);
-  grid-template-rows: repeat(3, 42px);
+  width: 112px;
+  height: 112px;
+  grid-template-columns: repeat(3, 32px);
+  grid-template-rows: repeat(3, 32px);
   align-content: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   border-radius: 50%;
   background:
     radial-gradient(circle at 50% 50%, rgba(133, 245, 255, 0.25) 0 21%, transparent 22%),
@@ -2848,7 +2919,7 @@ button:disabled {
 .city-controls::before {
   content: "";
   position: absolute;
-  inset: 48px;
+  inset: 39px;
   border-radius: 50%;
   background: rgba(202, 247, 255, 0.16);
   box-shadow: inset 0 0 0 1px rgba(202, 247, 255, 0.18);
@@ -2857,8 +2928,8 @@ button:disabled {
 
 .city-controls button,
 .city-fire-control {
-  width: 42px;
-  height: 42px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -2874,6 +2945,11 @@ button:disabled {
   position: relative;
   z-index: 1;
   pointer-events: none;
+}
+
+.city-controls svg {
+  width: 17px;
+  height: 17px;
 }
 
 .city-controls.active-up button:first-child,
@@ -2964,11 +3040,41 @@ button:disabled {
 @keyframes cityPowerup {
   0%,
   100% {
-    transform: translate(-50%, -50%) scale(0.9);
+    transform: translate(-50%, -50%) scale(0.92);
   }
 
   50% {
-    transform: translate(-50%, -50%) scale(1.12);
+    transform: translate(-50%, -50%) scale(1.18);
+  }
+}
+
+@keyframes cityPowerupRing {
+  0% {
+    opacity: 0.78;
+    transform: scale(0.74);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+@keyframes cityNotice {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.86);
+  }
+
+  16%,
+  72% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -14px) scale(0.96);
   }
 }
 
@@ -3532,20 +3638,9 @@ button:disabled {
     height: 23px;
   }
 
-  .city-dialogue {
-    min-height: 46px;
-    margin-right: 10px;
-    margin-left: 10px;
-    padding: 6px 10px;
-  }
-
-  .city-dialogue p {
-    font-size: 13px;
-  }
-
   .city-arena {
-    margin-right: 10px;
-    margin-left: 10px;
+    padding-right: 1px;
+    padding-left: 1px;
   }
 
   .city-hud {
@@ -3565,15 +3660,15 @@ button:disabled {
   }
 
   .city-controls {
-    width: 132px;
-    height: 132px;
-    grid-template-columns: repeat(3, 38px);
-    grid-template-rows: repeat(3, 38px);
+    width: 102px;
+    height: 102px;
+    grid-template-columns: repeat(3, 29px);
+    grid-template-rows: repeat(3, 29px);
   }
 
   .city-controls button {
-    width: 38px;
-    height: 38px;
+    width: 29px;
+    height: 29px;
   }
 
   .city-fire-control {

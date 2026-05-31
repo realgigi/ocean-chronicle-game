@@ -216,6 +216,12 @@ type CityPowerup = {
   expiresAt: number;
 };
 type CityStatus = 'playing' | 'won' | 'lost';
+type CityNoticeKind = CityPowerupKind | 'damage' | 'base' | 'spawn';
+type CityNotice = {
+  id: number;
+  kind: CityNoticeKind;
+  text: string;
+};
 type BreakoutPowerupKind = 'split2' | 'gun' | 'split5' | 'giant' | 'grow' | 'wide' | 'narrow';
 
 type BreakoutPowerup = {
@@ -593,7 +599,7 @@ const towerPlayerStart: TowerPlayer = { x: 50, y: 48, vy: 0 };
 const cityGridSize = 32;
 const cityCellSize = 100 / cityGridSize;
 const cityViewCols = 15;
-const cityViewRows = 20;
+const cityViewRows = 22;
 const cityViewWidth = cityCellSize * cityViewCols;
 const cityViewHeight = cityCellSize * cityViewRows;
 const cityUnitSize = cityCellSize * 0.74;
@@ -624,6 +630,26 @@ const cityPowerupWeights: { kind: CityPowerupKind; weight: number }[] = [
   { kind: 'pierce', weight: 10 },
   { kind: 'repair', weight: 7 },
 ];
+const cityPowerupLabels: Record<CityPowerupKind, string> = {
+  speed: '速',
+  shield: '盾',
+  armor: '甲',
+  fortify: '堡',
+  freeze: '寒',
+  blast: '震',
+  pierce: '穿',
+  repair: '修',
+};
+const cityPowerupMessages: Record<CityPowerupKind, string> = {
+  speed: '攻速提升',
+  shield: '護盾展開',
+  armor: '裝甲 +1',
+  fortify: '主堡 +1',
+  freeze: '敵軍緩速',
+  blast: '震波清場',
+  pierce: '穿甲啟動',
+  repair: '全體修復',
+};
 
 function sameCell(a: SnakeCell, b: SnakeCell) {
   return a.row === b.row && a.col === b.col;
@@ -3266,6 +3292,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const lastTime = useRef<number | null>(null);
   const nextId = useRef(1);
   const spawnTimer = useRef(0);
+  const noticeId = useRef(0);
   const playerRef = useRef({ ...cityPlayerStart, cooldown: 0 });
   const tilesRef = useRef<CityTile[]>(startingTiles);
   const enemiesRef = useRef<CityUnit[]>([]);
@@ -3291,7 +3318,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const [freezeUntil, setFreezeUntil] = useState(0);
   const [pierceUntil, setPierceUntil] = useState(0);
   const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
-  const [dialogue, setDialogue] = useState('隨機城市區塊展開。按住左下方向盤滑動換方向；右側開炮。');
+  const [notice, setNotice] = useState<CityNotice | null>(null);
   const baseHpRef = useRef(cityStartingBaseHp);
   const armorRef = useRef(cityStartingArmor);
   const killsRef = useRef(0);
@@ -3300,6 +3327,11 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const shieldUntilRef = useRef(0);
   const freezeUntilRef = useRef(0);
   const pierceUntilRef = useRef(0);
+
+  const showCityNotice = useCallback((kind: CityNoticeKind, text: string) => {
+    noticeId.current += 1;
+    setNotice({ id: noticeId.current, kind, text });
+  }, []);
 
   const restart = useCallback(() => {
     const nextTiles = createCityTiles();
@@ -3337,8 +3369,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     setFreezeUntil(0);
     setPierceUntil(0);
     setPadDirection(null);
-    setDialogue('城市地形重新生成。按住左下方向盤滑動換方向；右側開炮。');
-  }, []);
+    showCityNotice('spawn', '新地圖');
+  }, [showCityNotice]);
 
   useEffect(() => {
     const arena = arenaRef.current;
@@ -3492,7 +3524,6 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
           if (spawned) {
             nextEnemies.push(spawned);
           }
-          setDialogue('機甲烏賊從城市邊緣潛入。利用牆面擋線，海草可隱身，海溝會拖慢移動。');
         }
 
         const frozen = freezeUntilRef.current > time;
@@ -3621,13 +3652,13 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
                 nextArmor -= 1;
                 shieldUntilRef.current = time + 1400;
                 setShieldUntil(time + 1400);
-                setDialogue('銀背突擊兵中彈，裝甲下降。');
+                showCityNotice('damage', '裝甲 -1');
               }
               return;
             }
             if (cityIntersectsRect(moved.x, moved.y, cityCellSize * 0.45, { x: cityBase.x - cityBase.size / 2, y: cityBase.y - cityBase.size / 2, size: cityBase.size })) {
               nextBaseHp -= 1;
-              setDialogue('冰晶主陣地被擊中，快回防。');
+              showCityNotice('base', '主堡 -1');
               return;
             }
           }
@@ -3636,29 +3667,29 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
 
         nextEnemies = nextEnemies.filter((enemy) => enemy.hp > 0);
         nextPowerups = nextPowerups.filter((powerup) => {
-          if (Math.hypot(currentPlayer.x - powerup.x, currentPlayer.y - powerup.y) >= cityCellSize * 1.08) return true;
+          if (Math.hypot(currentPlayer.x - powerup.x, currentPlayer.y - powerup.y) >= cityCellSize * 1.24) return true;
           if (powerup.kind === 'speed') {
             rapidUntilRef.current = time + 7000;
             setRapidUntil(time + 7000);
-            setDialogue('攻速核心啟動，短時間火力提升。');
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'shield') {
             shieldUntilRef.current = time + 6000;
             setShieldUntil(time + 6000);
-            setDialogue('海光護盾展開，短時間無敵。');
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'armor') {
             nextArmor = Math.min(cityMaxHp, nextArmor + 1);
-            setDialogue('裝甲補強，銀背突擊兵撐住了。');
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'fortify') {
             nextBaseHp = Math.min(cityMaxHp, nextBaseHp + 1);
-            setDialogue('冰晶主堡加固，防線多撐一層。');
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'freeze') {
             freezeUntilRef.current = time + 6500;
             setFreezeUntil(time + 6500);
-            setDialogue('寒流核心啟動，機甲烏賊動作大幅變慢。');
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'blast') {
             let defeated = 0;
@@ -3667,20 +3698,20 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
               .filter((enemy) => {
                 if (enemy.hp <= 0) defeated += 1;
                 return enemy.hp > 0;
-              });
+            });
             nextKills += defeated;
             nextShots = nextShots.filter((shot) => shot.side === 'ally');
-            setDialogue('震波核心爆開，敵彈清除並重創全場敵軍。');
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'pierce') {
             pierceUntilRef.current = time + 8000;
             setPierceUntil(time + 8000);
-            setDialogue('穿甲海光裝填，短時間可貫穿可破壞牆與敵兵。');
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'repair') {
             nextArmor = Math.min(cityMaxHp, nextArmor + 1);
             nextBaseHp = Math.min(cityMaxHp, nextBaseHp + 1);
-            setDialogue('維修水母群抵達，裝甲與主堡同步修復。');
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           return false;
         });
@@ -3707,11 +3738,11 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
         if (nextBaseHp <= 0 || nextArmor <= 0) {
           statusRef.current = 'lost';
           setStatus('lost');
-          setDialogue(nextBaseHp <= 0 ? '冰晶主陣地失守，海底城市防線崩開。' : '銀背突擊兵裝甲破裂，防衛失敗。');
+          showCityNotice('damage', nextBaseHp <= 0 ? '主堡失守' : '裝甲破裂');
         } else if (nextKills >= cityTargetKills) {
           statusRef.current = 'won';
           setStatus('won');
-          setDialogue('機甲烏賊部隊撤退，海底城市暫時守住了。');
+          showCityNotice('spawn', '城市守住');
         }
       }
 
@@ -3721,9 +3752,9 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [movePlayerStep]);
+  }, [movePlayerStep, showCityNotice]);
 
-  const cityCellPx = Math.max(18, Math.floor(Math.min((arenaSize.width || 360) / cityViewCols, (arenaSize.height || 520) / cityViewRows)));
+  const cityCellPx = Math.max(18, Math.min((arenaSize.width || 360) / cityViewCols, (arenaSize.height || 520) / cityViewRows));
   const cityViewportWidthPx = cityCellPx * cityViewCols;
   const cityViewportHeightPx = cityCellPx * cityViewRows;
   const cityWorldPx = cityCellPx * cityGridSize;
@@ -3742,7 +3773,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     transform: `translate(${-(camera.x / cityCellSize) * cityCellPx}px, ${-(camera.y / cityCellSize) * cityCellPx}px)`,
     ['--city-unit-size' as string]: `${cityUnitVisualSize}%`,
     ['--city-shot-size' as string]: `${cityCellSize * 0.34}%`,
-    ['--city-powerup-size' as string]: `${cityCellSize * 0.76}%`,
+    ['--city-powerup-size' as string]: `${cityCellSize * 1.12}%`,
   };
   const playerHidden = citySeaweedCover(player.x, player.y, tiles);
   const shielded = shieldUntil > performance.now();
@@ -3761,9 +3792,6 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
           </button>
         }
       />
-      <div className="city-dialogue">
-        <p>{dialogue}</p>
-      </div>
       <div className="city-arena" ref={arenaRef}>
         <div
           className="city-viewport"
@@ -3789,7 +3817,10 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
               <img src={assets.cityUnits.base} alt="" />
             </div>
             {powerups.map((powerup) => (
-              <img className={`city-powerup ${powerup.kind}`} src={assets.pickup} alt="" key={powerup.id} style={{ left: `${powerup.x}%`, top: `${powerup.y}%` }} />
+              <div className={`city-powerup ${powerup.kind}`} key={powerup.id} style={{ left: `${powerup.x}%`, top: `${powerup.y}%` }}>
+                <img src={assets.pickup} alt="" />
+                <span>{cityPowerupLabels[powerup.kind]}</span>
+              </div>
             ))}
             {enemies.map((enemy) => (
               <div className={`city-unit enemy dir-${enemy.dir} ${citySeaweedCover(enemy.x, enemy.y, tiles) ? 'hidden' : ''} ${enemiesFrozen ? 'frozen' : ''}`} key={enemy.id} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }}>
@@ -3812,6 +3843,11 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             <span>裝甲 {armor}/{cityMaxHp}</span>
             <span>擊破 {kills}/{cityTargetKills}</span>
           </div>
+          {notice && (
+            <div className={`city-notice ${notice.kind}`} key={notice.id}>
+              {notice.text}
+            </div>
+          )}
           <div className="city-minimap">
             <span className="view" style={{ left: `${camera.x}%`, top: `${camera.y}%`, width: `${cityViewWidth}%`, height: `${cityViewHeight}%` }} />
             <span className="base" style={{ left: `${cityBase.x}%`, top: `${cityBase.y}%` }} />
