@@ -3261,17 +3261,20 @@ button:disabled {
 
 .lightbomb-enemy {
   z-index: 12;
-  width: calc(var(--bomb-cell-px) * 1.12);
-  height: calc(var(--bomb-cell-px) * 1.12);
+  width: calc(var(--bomb-cell-px) * 0.96);
+  height: calc(var(--bomb-cell-px) * 0.96);
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(6, 22, 35, 0.54);
+  box-shadow: inset 0 0 0 1px rgba(205, 245, 246, 0.2);
   filter: drop-shadow(0 7px 10px rgba(0, 0, 0, 0.32));
 }
 
 .lightbomb-enemy.urchin img,
 .lightbomb-enemy.anemone img {
-  border-radius: 50%;
+  border-radius: 6px;
   object-fit: cover;
 }
 
@@ -3329,16 +3332,52 @@ button:disabled {
 }
 
 .lightbomb-exit {
-  z-index: 9;
-  width: calc(var(--bomb-cell-px) * 1.05);
-  height: calc(var(--bomb-cell-px) * 1.05);
+  z-index: 13;
+  width: calc(var(--bomb-cell-px) * 1.16);
+  height: calc(var(--bomb-cell-px) * 1.16);
   border-radius: 8px;
   background:
-    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.95), rgba(255, 229, 117, 0.66) 30%, transparent 31%),
-    linear-gradient(180deg, rgba(112, 234, 240, 0.9), rgba(36, 78, 114, 0.92));
+    radial-gradient(circle at 50% 34%, rgba(255, 255, 255, 0.98), rgba(255, 230, 108, 0.74) 0 22%, transparent 23%),
+    linear-gradient(180deg, rgba(106, 239, 246, 0.95), rgba(28, 78, 121, 0.96));
   box-shadow:
-    0 0 0 2px rgba(255, 234, 133, 0.3),
-    0 0 22px rgba(119, 235, 246, 0.7);
+    0 0 0 2px rgba(255, 234, 133, 0.62),
+    0 0 18px rgba(255, 225, 107, 0.8),
+    0 0 30px rgba(119, 235, 246, 0.76);
+}
+
+.lightbomb-exit::before,
+.lightbomb-exit::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.lightbomb-exit::before {
+  bottom: 13%;
+  width: 58%;
+  height: 52%;
+  border-radius: 999px 999px 5px 5px;
+  background: linear-gradient(180deg, rgba(4, 27, 51, 0.88), rgba(3, 12, 24, 0.92));
+  box-shadow: inset 0 0 0 2px rgba(255, 229, 118, 0.4);
+}
+
+.lightbomb-exit::after {
+  top: 52%;
+  width: 52%;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 235, 132, 0.92);
+}
+
+.lightbomb-exit.locked {
+  filter: saturate(0.9);
+  opacity: 0.82;
+}
+
+.lightbomb-exit.open {
+  animation: lightDoorOpen 0.9s ease-in-out infinite;
 }
 
 .lightbomb-hud {
@@ -3537,6 +3576,23 @@ button:disabled {
   100% {
     opacity: 0;
     transform: scale(0.9);
+  }
+}
+
+@keyframes lightDoorOpen {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(255, 234, 133, 0.62),
+      0 0 18px rgba(255, 225, 107, 0.8),
+      0 0 30px rgba(119, 235, 246, 0.76);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(255, 245, 166, 0.84),
+      0 0 26px rgba(255, 225, 107, 0.96),
+      0 0 42px rgba(119, 235, 246, 0.9);
   }
 }
 

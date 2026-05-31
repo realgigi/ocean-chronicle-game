@@ -4244,6 +4244,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
   const [explosions, setExplosions] = useState<LightBombExplosion[]>([]);
   const [powerups, setPowerups] = useState<LightBombPowerup[]>([]);
   const [exit, setExit] = useState<LightBombExit>(firstLevel.exit);
+  const [exitFound, setExitFound] = useState(false);
   const [exitVisible, setExitVisible] = useState(false);
   const [status, setStatus] = useState<LightBombStatus>('playing');
   const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
@@ -4277,6 +4278,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     setExplosions([]);
     setPowerups([]);
     setExit(level.exit);
+    setExitFound(false);
     setExitVisible(false);
     setStatus('playing');
     setPadDirection(null);
@@ -4589,6 +4591,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
         setBombs(nextBombs);
         setExplosions(nextExplosions);
         setEnemies(nextEnemies);
+        setExitFound(exitRevealed);
         setExitVisible(visibleExit);
       }
 
@@ -4633,7 +4636,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
         <div className="lightbomb-viewport" style={viewportStyle}>
           <div className="lightbomb-world" style={worldStyle}>
             {tiles.map((tile) => <span className={`lightbomb-tile ${tile.kind}`} key={tile.id} style={lightBombCellStyle(tile.row, tile.col)} />)}
-            {exitVisible && <span className="lightbomb-exit" style={lightBombTokenStyle(exit.col, exit.row)} />}
+            {exitFound && <span className={`lightbomb-exit ${exitVisible ? 'open' : 'locked'}`} style={lightBombTokenStyle(exit.col, exit.row)} />}
             {powerups.map((powerup) => (
               <span className={`lightbomb-powerup ${powerup.kind}`} key={powerup.id} style={lightBombTokenStyle(powerup.col, powerup.row)}>
                 {lightBombPowerupLabels[powerup.kind]}
