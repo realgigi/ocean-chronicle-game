@@ -974,6 +974,19 @@ function cityTerrainSpeed(x: number, y: number, tiles: CityTile[]) {
   return 1;
 }
 
+function cityVisualStep(value: number, target: number, dt: number) {
+  return cityApproach(value, target, (cityCellSize * dt) / 150);
+}
+
+function citySmoothVisual<T extends { x: number; y: number }>(previous: T | undefined, target: T, dt: number): T {
+  if (!previous || Math.hypot(target.x - previous.x, target.y - previous.y) > cityCellSize * 2.2) return target;
+  return {
+    ...target,
+    x: cityVisualStep(previous.x, target.x, dt),
+    y: cityVisualStep(previous.y, target.y, dt),
+  };
+}
+
 function isReverseDirection(current: SnakeDirection, next: SnakeDirection) {
   return (
     (current === 'up' && next === 'down') ||
@@ -3308,8 +3321,10 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const spawnTimer = useRef(0);
   const noticeId = useRef(0);
   const playerRef = useRef({ ...cityPlayerStart, cooldown: 0 });
+  const visualPlayerRef = useRef({ ...cityPlayerStart });
   const tilesRef = useRef<CityTile[]>(startingTiles);
   const enemiesRef = useRef<CityUnit[]>([]);
+  const visualEnemiesRef = useRef<CityUnit[]>([]);
   const shotsRef = useRef<CityShot[]>([]);
   const powerupsRef = useRef<CityPowerup[]>([]);
   const keysRef = useRef({ fire: false });
@@ -3319,8 +3334,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
   const [tiles, setTiles] = useState<CityTile[]>(startingTiles);
-  const [player, setPlayer] = useState({ ...cityPlayerStart });
-  const [enemies, setEnemies] = useState<CityUnit[]>([]);
+  const [visualPlayer, setVisualPlayer] = useState({ ...cityPlayerStart });
+  const [visualEnemies, setVisualEnemies] = useState<CityUnit[]>([]);
   const [shots, setShots] = useState<CityShot[]>([]);
   const [powerups, setPowerups] = useState<CityPowerup[]>([]);
   const [baseHp, setBaseHp] = useState(cityStartingBaseHp);
@@ -3350,8 +3365,10 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const restart = useCallback(() => {
     const nextTiles = createCityTiles();
     playerRef.current = { ...cityPlayerStart, cooldown: 0 };
+    visualPlayerRef.current = { ...cityPlayerStart };
     tilesRef.current = nextTiles;
     enemiesRef.current = [];
+    visualEnemiesRef.current = [];
     shotsRef.current = [];
     powerupsRef.current = [];
     keysRef.current = { fire: false };
@@ -3370,8 +3387,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     freezeUntilRef.current = 0;
     pierceUntilRef.current = 0;
     setTiles(nextTiles);
-    setPlayer({ ...cityPlayerStart });
-    setEnemies([]);
+    setVisualPlayer({ ...cityPlayerStart });
+    setVisualEnemies([]);
     setShots([]);
     setPowerups([]);
     setBaseHp(cityStartingBaseHp);
@@ -3407,7 +3424,6 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
       currentPlayer.y = next.y;
     }
     playerRef.current = currentPlayer;
-    setPlayer({ x: currentPlayer.x, y: currentPlayer.y, dir: currentPlayer.dir });
   }, []);
 
   const holdPlayerDirection = useCallback((direction: CityDirection | null, startTime = performance.now()) => {
@@ -3741,8 +3757,13 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
           tilesRef.current = nextTiles;
           setTiles(nextTiles);
         }
-        setPlayer({ x: currentPlayer.x, y: currentPlayer.y, dir: currentPlayer.dir });
-        setEnemies(nextEnemies);
+        const nextVisualPlayer = citySmoothVisual(visualPlayerRef.current, { x: currentPlayer.x, y: currentPlayer.y, dir: currentPlayer.dir }, dt);
+        const visualEnemyLookup = new Map(visualEnemiesRef.current.map((enemy) => [enemy.id, enemy]));
+        const nextVisualEnemies = nextEnemies.map((enemy) => citySmoothVisual(visualEnemyLookup.get(enemy.id), enemy, dt));
+        visualPlayerRef.current = nextVisualPlayer;
+        visualEnemiesRef.current = nextVisualEnemies;
+        setVisualPlayer(nextVisualPlayer);
+        setVisualEnemies(nextVisualEnemies);
         setShots(shotsRef.current);
         setPowerups(nextPowerups);
         setArmor(nextArmor);
@@ -3773,8 +3794,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const cityViewportHeightPx = cityCellPx * cityViewRows;
   const cityWorldPx = cityCellPx * cityGridSize;
   const camera = {
-    x: clamp(player.x - cityViewWidth / 2, 0, 100 - cityViewWidth),
-    y: clamp(player.y - cityViewHeight / 2, 0, 100 - cityViewHeight),
+    x: clamp(visualPlayer.x - cityViewWidth / 2, 0, 100 - cityViewWidth),
+    y: clamp(visualPlayer.y - cityViewHeight / 2, 0, 100 - cityViewHeight),
   };
   const viewportStyle: CSSProperties = {
     width: `${cityViewportWidthPx}px`,
@@ -3789,7 +3810,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     ['--city-shot-size' as string]: `${cityCellSize * 0.34}%`,
     ['--city-powerup-size' as string]: `${cityCellSize * 1.12}%`,
   };
-  const playerHidden = citySeaweedCover(player.x, player.y, tiles);
+  const playerHidden = citySeaweedCover(visualPlayer.x, visualPlayer.y, tiles);
   const shielded = shieldUntil > performance.now();
   const rapid = rapidUntil > performance.now();
   const piercing = pierceUntil > performance.now();
@@ -3836,14 +3857,14 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
                 <span>{cityPowerupLabels[powerup.kind]}</span>
               </div>
             ))}
-            {enemies.map((enemy) => (
+            {visualEnemies.map((enemy) => (
               <div className={`city-unit enemy dir-${enemy.dir} ${citySeaweedCover(enemy.x, enemy.y, tiles) ? 'hidden' : ''} ${enemiesFrozen ? 'frozen' : ''}`} key={enemy.id} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }}>
                 <img src={assets.cityUnits.enemy[enemy.dir]} alt="" />
                 <i style={{ width: `${enemy.hp * 50}%` }} />
               </div>
             ))}
-            <div className={`city-unit player dir-${player.dir} ${playerHidden ? 'hidden' : ''} ${shielded ? 'shielded' : ''} ${rapid ? 'rapid' : ''} ${piercing ? 'piercing' : ''}`} style={{ left: `${player.x}%`, top: `${player.y}%` }}>
-              <img src={assets.cityUnits.player[player.dir]} alt="" />
+            <div className={`city-unit player dir-${visualPlayer.dir} ${playerHidden ? 'hidden' : ''} ${shielded ? 'shielded' : ''} ${rapid ? 'rapid' : ''} ${piercing ? 'piercing' : ''}`} style={{ left: `${visualPlayer.x}%`, top: `${visualPlayer.y}%` }}>
+              <img src={assets.cityUnits.player[visualPlayer.dir]} alt="" />
             </div>
             {shots.map((shot) => (
               <span className={`city-shot ${shot.side} dir-${shot.dir} ${shot.piercing ? 'piercing' : ''}`} key={shot.id} style={{ left: `${shot.x}%`, top: `${shot.y}%` }} />
@@ -3865,8 +3886,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
           <div className="city-minimap">
             <span className="view" style={{ left: `${camera.x}%`, top: `${camera.y}%`, width: `${cityViewWidth}%`, height: `${cityViewHeight}%` }} />
             <span className="base" style={{ left: `${cityBase.x}%`, top: `${cityBase.y}%` }} />
-            <span className="player" style={{ left: `${player.x}%`, top: `${player.y}%` }} />
-            {enemies.map((enemy) => (
+            <span className="player" style={{ left: `${visualPlayer.x}%`, top: `${visualPlayer.y}%` }} />
+            {visualEnemies.map((enemy) => (
               <span className="enemy" key={`mini-${enemy.id}`} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }} />
             ))}
           </div>

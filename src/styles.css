@@ -2421,7 +2421,6 @@ button:disabled {
   left: 0;
   top: 0;
   will-change: transform;
-  transition: transform 185ms cubic-bezier(0.22, 0.78, 0.24, 1);
   background:
     radial-gradient(circle at 14% 42%, rgba(255, 229, 137, 0.08), transparent 13%),
     radial-gradient(circle at 22% 18%, rgba(91, 210, 207, 0.12), transparent 18%),
@@ -2596,11 +2595,7 @@ button:disabled {
   place-items: center;
   border-radius: 6px;
   pointer-events: none;
-  transition:
-    left 185ms cubic-bezier(0.22, 0.78, 0.24, 1),
-    top 185ms cubic-bezier(0.22, 0.78, 0.24, 1),
-    filter 120ms linear,
-    box-shadow 120ms linear;
+  transition: filter 120ms linear, box-shadow 120ms linear;
 }
 
 .city-unit.player {
@@ -2894,9 +2889,6 @@ button:disabled {
   border: 1px solid rgba(255, 237, 150, 0.76);
   border-radius: 3px;
   background: rgba(255, 237, 150, 0.08);
-  transition:
-    left 185ms cubic-bezier(0.22, 0.78, 0.24, 1),
-    top 185ms cubic-bezier(0.22, 0.78, 0.24, 1);
 }
 
 .city-minimap .base {
@@ -2907,17 +2899,11 @@ button:disabled {
 .city-minimap .player {
   background: #85f5ff;
   box-shadow: 0 0 8px rgba(133, 245, 255, 0.82);
-  transition:
-    left 185ms cubic-bezier(0.22, 0.78, 0.24, 1),
-    top 185ms cubic-bezier(0.22, 0.78, 0.24, 1);
 }
 
 .city-minimap .enemy {
   background: #f18dff;
   box-shadow: 0 0 8px rgba(241, 141, 255, 0.7);
-  transition:
-    left 185ms cubic-bezier(0.22, 0.78, 0.24, 1),
-    top 185ms cubic-bezier(0.22, 0.78, 0.24, 1);
 }
 
 .city-controls {
