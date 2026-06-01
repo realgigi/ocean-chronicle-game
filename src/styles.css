@@ -1709,14 +1709,34 @@ button:disabled {
     inset 0 -36px 80px rgba(15, 93, 82, 0.22);
 }
 
+.snake-board::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  background:
+    linear-gradient(180deg, transparent, rgba(6, 18, 26, 0.2)),
+    repeating-linear-gradient(118deg, transparent 0 42px, rgba(113, 238, 214, 0.08) 43px 46px, transparent 47px 86px),
+    repeating-linear-gradient(72deg, transparent 0 68px, rgba(255, 230, 132, 0.055) 69px 71px, transparent 72px 128px);
+  mix-blend-mode: screen;
+  opacity: 0.58;
+  pointer-events: none;
+  animation: snakeWaterFlow 5.2s linear infinite;
+}
+
 .snake-world {
   position: absolute;
   left: 0;
   top: 0;
   will-change: transform;
+  transition: transform var(--snake-step-ms, 190ms) linear;
   background:
     linear-gradient(120deg, rgba(255, 222, 110, 0.08), transparent 24%, rgba(113, 236, 202, 0.09) 58%, transparent 78%),
     linear-gradient(180deg, rgba(13, 68, 70, 0.98), rgba(5, 26, 39, 0.98));
+}
+
+.snake-board.no-snake-transition .snake-world {
+  transition: none;
 }
 
 .snake-world::before {
@@ -1727,6 +1747,7 @@ button:disabled {
     linear-gradient(rgba(204, 255, 239, 0.08) 1px, transparent 1px),
     linear-gradient(90deg, rgba(204, 255, 239, 0.08) 1px, transparent 1px);
   background-size: var(--snake-cell-px) var(--snake-cell-px);
+  animation: snakeGridGlide 3.8s linear infinite;
   pointer-events: none;
 }
 
@@ -2020,6 +2041,26 @@ button:disabled {
 
   50% {
     transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+@keyframes snakeWaterFlow {
+  0% {
+    background-position: 0 0, 0 0, 0 0;
+  }
+
+  100% {
+    background-position: 0 0, -180px 150px, 120px -170px;
+  }
+}
+
+@keyframes snakeGridGlide {
+  0% {
+    background-position: 0 0, 0 0;
+  }
+
+  100% {
+    background-position: var(--snake-cell-px) var(--snake-cell-px), var(--snake-cell-px) var(--snake-cell-px);
   }
 }
 

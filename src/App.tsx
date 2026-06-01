@@ -703,12 +703,12 @@ const towerPlayerRadius = 3.6;
 const towerPlayerStart: TowerPlayer = { x: 50, y: 48, vy: 0 };
 const cityGridSize = 32;
 const cityCellSize = 100 / cityGridSize;
-const cityViewCols = 15;
-const cityViewRows = 22;
+const cityViewCols = 10;
+const cityViewRows = 15;
 const cityViewWidth = cityCellSize * cityViewCols;
 const cityViewHeight = cityCellSize * cityViewRows;
 const cityUnitSize = cityCellSize * 0.74;
-const cityUnitVisualSize = cityCellSize * 0.94;
+const cityUnitVisualSize = cityCellSize * 1.16;
 const cityPlayerStepDelayMs = 240;
 const cityStartingBaseHp = 4;
 const cityStartingArmor = 4;
@@ -2908,9 +2908,10 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
   const snakeViewportHeightPx = snakeCellPx * snakeViewRows;
   const snakeWorldWidthPx = snakeCellPx * snakeCols;
   const snakeWorldHeightPx = snakeCellPx * snakeRows;
+  const snakeFacing = cityDirectionVector(direction);
   const snakeCamera = {
-    col: clamp(snake[0].col + 0.5 - snakeViewCols / 2, 0, snakeCols - snakeViewCols),
-    row: clamp(snake[0].row + 0.5 - snakeViewRows / 2, 0, snakeRows - snakeViewRows),
+    col: clamp(snake[0].col + 0.5 + snakeFacing.x * 1.45 - snakeViewCols / 2, 0, snakeCols - snakeViewCols),
+    row: clamp(snake[0].row + 0.5 + snakeFacing.y * 2.1 - snakeViewRows / 2, 0, snakeRows - snakeViewRows),
   };
   const snakePositionStyle = useCallback(
     (cell: SnakeCell, extra?: CSSProperties) =>
@@ -3823,12 +3824,16 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   }, [movePlayerStep]);
 
   const holdPlayerDirection = useCallback((intent: DirectionPadIntent, vector: DirectionPadVector = { x: 0, y: 0 }, startTime = performance.now()) => {
+    const wasHolding = heldDirectionRef.current !== null;
     const sameIntent = directionPadIntentsEqual(heldDirectionRef.current, intent);
     heldDirectionRef.current = intent;
     setPadDirection(intent?.primary ?? null);
     setPadVector(intent ? vector : { x: 0, y: 0 });
-    if (intent && !sameIntent) {
+    if (!intent) return;
+    if (!wasHolding) {
       movePlayerIntent(intent);
+      nextPlayerStepAt.current = startTime + cityPlayerStepDelayMs;
+    } else if (!sameIntent) {
       nextPlayerStepAt.current = startTime + cityPlayerStepDelayMs;
     }
   }, [movePlayerIntent]);
