@@ -148,6 +148,11 @@ type SnakePowerup = SnakeCell & {
 
 type SnakeStatus = 'ready' | 'playing' | 'won' | 'lost';
 
+type SnakeReadyNotice = {
+  title: string;
+  detail: string;
+};
+
 type SnakeWrapEffect = {
   id: number;
   from: SnakeCell;
@@ -2966,6 +2971,7 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const movePointerRef = useRef<number | null>(null);
   const directionRef = useRef<SnakeDirection>('up');
+  const stepDirectionRef = useRef<SnakeDirection>('up');
   const snakeRef = useRef<SnakeCell[]>(snakeStart);
   const snakeCameraRef = useRef(snakeCenteredCamera(snakeStart[0]));
   const foodRef = useRef<SnakeCell>(placeSnakeFood(snakeStart, []));
@@ -2987,6 +2993,10 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [status, setStatus] = useState<SnakeStatus>('ready');
+  const [readyNotice, setReadyNotice] = useState<SnakeReadyNotice>({
+    title: '海潮待命',
+    detail: '拖曳方向鍵開始',
+  });
   const [snakeBoardSize, setSnakeBoardSize] = useState({ width: 0, height: 0 });
   const [wrapEffect, setWrapEffect] = useState<SnakeWrapEffect>(null);
   const [skipSnakeTransition, setSkipSnakeTransition] = useState(false);
@@ -3070,7 +3080,7 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
 
   const changeDirection = useCallback((next: SnakeDirection) => {
     if (statusRef.current !== 'playing' && statusRef.current !== 'ready') return;
-    if (statusRef.current === 'playing' && isReverseDirection(directionRef.current, next)) return;
+    if (isReverseDirection(stepDirectionRef.current, next)) return;
     if (statusRef.current === 'ready') {
       statusRef.current = 'playing';
       setStatus('playing');
@@ -3079,16 +3089,18 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
     setDirection(next);
   }, []);
 
-  const resetRound = useCallback((nextLives: number) => {
+  const resetRound = useCallback((nextLives: number, notice: SnakeReadyNotice = { title: '海潮待命', detail: '拖曳方向鍵開始' }) => {
     if (wrapEffectTimer.current) window.clearTimeout(wrapEffectTimer.current);
     const nextCamera = snakeCenteredCamera(snakeStart[0]);
     wrapEffectTimer.current = null;
     directionRef.current = 'up';
+    stepDirectionRef.current = 'up';
     obstaclesRef.current = [];
     powerupRef.current = null;
     invincibleUntilRef.current = 0;
     snakeRef.current = snakeStart;
     snakeCameraRef.current = nextCamera;
+    movePointerRef.current = null;
     const nextFood = placeSnakeFood(snakeStart, []);
     foodRef.current = nextFood;
     setDirection('up');
@@ -3100,7 +3112,10 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
     setInvincibleUntil(0);
     setWrapEffect(null);
     setSkipSnakeTransition(false);
+    setPadDirection(null);
+    setPadVector({ x: 0, y: 0 });
     setLives(nextLives);
+    setReadyNotice(notice);
   }, []);
 
   const restart = useCallback(() => {
@@ -3109,10 +3124,10 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
     statusRef.current = 'ready';
     setScore(0);
     setStatus('ready');
-    resetRound(3);
+    resetRound(3, { title: '重新開始', detail: '拖曳方向鍵再出發' });
   }, [resetRound]);
 
-  const loseLife = useCallback(() => {
+  const loseLife = useCallback((reason: 'self' | 'obstacle') => {
     const nextLives = livesRef.current - 1;
     livesRef.current = nextLives;
     if (nextLives <= 0) {
@@ -3123,7 +3138,10 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
     }
     statusRef.current = 'ready';
     setStatus('ready');
-    resetRound(nextLives);
+    resetRound(nextLives, {
+      title: reason === 'self' ? '撞到自己，回到起點' : '被障礙擊中，回到起點',
+      detail: `剩餘 ${nextLives} 命，拖曳方向鍵繼續`,
+    });
   }, [resetRound]);
 
   useEffect(() => {
@@ -3145,7 +3163,8 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
       }
 
       const currentSnake = snakeRef.current;
-      const rawHead = nextSnakeHead(currentSnake[0], directionRef.current);
+      const moveDirection = directionRef.current;
+      const rawHead = nextSnakeHead(currentSnake[0], moveDirection);
       const head = wrapSnakeCell(rawHead);
       const didWrap = rawHead.row !== head.row || rawHead.col !== head.col;
       if (didWrap) {
@@ -3158,29 +3177,35 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
           wrapEffectTimer.current = null;
         }, 170);
       }
-      const hitSelf = currentSnake.slice(1).some((cell) => sameCell(cell, head));
       const hitObstacle = activeObstacles.some((obstacle) => sameCell(obstacle, head));
       const isInvincible = invincibleUntilRef.current > now;
-      if (hitSelf || (hitObstacle && !isInvincible)) {
-        loseLife();
+      const ateFood = sameCell(head, foodRef.current);
+      const atePowerup = powerupRef.current ? sameCell(head, powerupRef.current) : false;
+      const materialBonus = hitObstacle && isInvincible ? 2 : 0;
+      const bodyCells = ateFood || materialBonus > 0 ? currentSnake.slice(1) : currentSnake.slice(1, -1);
+      const hitSelf = bodyCells.some((cell) => sameCell(cell, head));
+      if (hitSelf) {
+        loseLife('self');
+        return;
+      }
+      if (hitObstacle && !isInvincible) {
+        loseLife('obstacle');
         return;
       }
       const nextSnakeCamera = didWrap ? snakeCenteredCamera(head) : snakeCameraWithDeadZone(snakeCameraRef.current, head);
       snakeCameraRef.current = nextSnakeCamera;
       setSnakeCamera(nextSnakeCamera);
-      const materialBonus = hitObstacle && isInvincible ? 2 : 0;
       if (materialBonus > 0) {
         const clearedObstacles = activeObstacles.filter((obstacle) => !sameCell(obstacle, head));
         obstaclesRef.current = clearedObstacles;
         setObstacles(clearedObstacles);
       }
 
-      const ateFood = sameCell(head, foodRef.current);
-      const atePowerup = powerupRef.current ? sameCell(head, powerupRef.current) : false;
       const growBy = (ateFood ? 1 : 0) + materialBonus;
       const baseSnake = growBy > 0 ? [head, ...currentSnake] : [head, ...currentSnake.slice(0, -1)];
       const tail = currentSnake[currentSnake.length - 1];
       const nextSnake = growBy > 1 ? [...baseSnake, ...Array.from({ length: growBy - 1 }, () => ({ ...tail }))] : baseSnake;
+      stepDirectionRef.current = moveDirection;
       snakeRef.current = nextSnake;
       setSnake(nextSnake);
 
@@ -3386,6 +3411,12 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
               </span>
             )}
           </div>
+          {status === 'ready' && (
+            <div className="snake-ready">
+              <strong>{readyNotice.title}</strong>
+              <span>{readyNotice.detail}</span>
+            </div>
+          )}
           <div
             className={`snake-controls ${padDirection ? `active-${padDirection}` : ''}`}
             aria-label="方向控制"
@@ -3929,6 +3960,13 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     return false;
   }, []);
 
+  const facePlayerDirection = useCallback((direction: CityDirection) => {
+    if (playerRef.current.dir === direction) return;
+    playerRef.current = { ...playerRef.current, dir: direction };
+    visualPlayerRef.current = { ...visualPlayerRef.current, dir: direction };
+    setVisualPlayer((current) => ({ ...current, dir: direction }));
+  }, []);
+
   const movePlayerIntent = useCallback((intent: DirectionPadIntent) => {
     if (!intent) return;
     if (intent.secondary) {
@@ -3957,16 +3995,17 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
       diagonalAxisRef.current = 'horizontal';
       return;
     }
+    if (!sameIntent) {
+      facePlayerDirection(intent.primary);
+    }
     if (intent.secondary && !sameIntent) {
       diagonalAxisRef.current = 'horizontal';
     }
     if (!wasHolding) {
       movePlayerIntent(intent);
       nextPlayerStepAt.current = startTime + cityPlayerStepDelayMs;
-    } else if (!sameIntent) {
-      nextPlayerStepAt.current = startTime + cityPlayerStepDelayMs;
     }
-  }, [movePlayerIntent]);
+  }, [facePlayerDirection, movePlayerIntent]);
 
   const setFirePressed = useCallback((pressed: boolean) => {
     keysRef.current.fire = pressed;

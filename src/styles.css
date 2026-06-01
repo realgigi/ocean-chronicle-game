@@ -2145,6 +2145,36 @@ button:disabled {
   color: #183228;
 }
 
+.snake-ready {
+  position: absolute;
+  z-index: 23;
+  left: 22px;
+  right: 22px;
+  top: 46%;
+  transform: translateY(-50%);
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 13px 16px;
+  border-radius: 8px;
+  color: rgba(238, 255, 251, 0.95);
+  background: rgba(4, 20, 29, 0.68);
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.32),
+    inset 0 0 0 1px rgba(172, 245, 229, 0.24);
+  pointer-events: none;
+  animation: snakeReadyPulse 900ms ease-out both;
+}
+
+.snake-ready strong {
+  font-size: 18px;
+}
+
+.snake-ready span {
+  color: rgba(198, 242, 232, 0.82);
+  font-size: 13px;
+}
+
 @keyframes snakePulse {
   0%,
   100% {
@@ -2153,6 +2183,18 @@ button:disabled {
 
   50% {
     transform: translate3d(var(--snake-x, 0px), var(--snake-y, 0px), 0) translate(-50%, -50%) scale(1.08);
+  }
+}
+
+@keyframes snakeReadyPulse {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.94);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
   }
 }
 
