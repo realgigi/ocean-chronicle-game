@@ -295,18 +295,21 @@ type LightBombNotice = {
   kind: LightBombPowerupKind | 'door' | 'hit';
   text: string;
 } | null;
-type LightBombPadIntent = {
+type DirectionPadIntent = {
   primary: CityDirection;
   secondary?: CityDirection;
 } | null;
-type LightBombPadVector = {
+type DirectionPadVector = {
   x: number;
   y: number;
 };
-type LightBombPadInput = {
-  intent: LightBombPadIntent;
-  vector: LightBombPadVector;
+type DirectionPadInput = {
+  intent: DirectionPadIntent;
+  vector: DirectionPadVector;
 };
+type LightBombPadIntent = DirectionPadIntent;
+type LightBombPadVector = DirectionPadVector;
+type LightBombPadInput = DirectionPadInput;
 type BreakoutPowerupKind = 'split2' | 'gun' | 'split5' | 'giant' | 'grow' | 'wide' | 'narrow';
 
 type BreakoutPowerup = {
@@ -684,13 +687,15 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-const snakeCols = 12;
-const snakeRows = 16;
-const snakeTarget = 30;
+const snakeCols = 24;
+const snakeRows = 36;
+const snakeViewCols = 10;
+const snakeViewRows = 16;
+const snakeTarget = 35;
 const snakeStart: SnakeCell[] = [
-  { col: 5, row: 11 },
-  { col: 5, row: 12 },
-  { col: 5, row: 13 },
+  { col: 12, row: 27 },
+  { col: 12, row: 28 },
+  { col: 12, row: 29 },
 ];
 const towerGoalMs = 180000;
 const towerDeathPenaltyMs = 15000;
@@ -806,6 +811,38 @@ function cityDirectionVector(direction: CityDirection) {
   if (direction === 'down') return { x: 0, y: 1 };
   if (direction === 'left') return { x: -1, y: 0 };
   return { x: 1, y: 0 };
+}
+
+function directionPadVectorFromDirection(direction: CityDirection): DirectionPadVector {
+  const vector = cityDirectionVector(direction);
+  return { x: vector.x * 31, y: vector.y * 31 };
+}
+
+function directionPadInputFromPointer(clientX: number, clientY: number, target: HTMLElement): DirectionPadInput {
+  const rect = target.getBoundingClientRect();
+  const dx = clientX - (rect.left + rect.width / 2);
+  const dy = clientY - (rect.top + rect.height / 2);
+  const size = Math.min(rect.width, rect.height);
+  const distance = Math.hypot(dx, dy);
+  if (distance < size * 0.13) return { intent: null, vector: { x: 0, y: 0 } };
+  const maxOffset = size * 0.28;
+  const vectorScale = distance > maxOffset ? maxOffset / distance : 1;
+  const vector = { x: dx * vectorScale, y: dy * vectorScale };
+  const horizontal: CityDirection = dx > 0 ? 'right' : 'left';
+  const vertical: CityDirection = dy > 0 ? 'down' : 'up';
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+  let intent: DirectionPadIntent;
+  if (absX > absY * 1.8) intent = { primary: horizontal };
+  else if (absY > absX * 1.8) intent = { primary: vertical };
+  else intent = absX >= absY
+    ? { primary: horizontal, secondary: vertical }
+    : { primary: vertical, secondary: horizontal };
+  return { intent, vector };
+}
+
+function directionPadIntentsEqual(a: DirectionPadIntent, b: DirectionPadIntent) {
+  return a?.primary === b?.primary && a?.secondary === b?.secondary;
 }
 
 function cityCellCenter(index: number) {
@@ -2839,6 +2876,7 @@ function SnowfieldGame({ onBack }: { onBack: () => void }) {
 function TideSnakeGame({ onBack }: { onBack: () => void }) {
   const snakeBoardRef = useRef<HTMLDivElement | null>(null);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const movePointerRef = useRef<number | null>(null);
   const directionRef = useRef<SnakeDirection>('up');
   const snakeRef = useRef<SnakeCell[]>(snakeStart);
   const foodRef = useRef<SnakeCell>(placeSnakeFood(snakeStart, []));
@@ -2859,19 +2897,29 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [status, setStatus] = useState<SnakeStatus>('ready');
-  const [dialogue, setDialogue] = useState('海光會引路。邊框可以穿越，無敵時海葵會變素材。');
   const [snakeBoardSize, setSnakeBoardSize] = useState({ width: 0, height: 0 });
   const [wrapEffect, setWrapEffect] = useState<SnakeWrapEffect>(null);
   const [skipSnakeTransition, setSkipSnakeTransition] = useState(false);
+  const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
+  const [padVector, setPadVector] = useState<DirectionPadVector>({ x: 0, y: 0 });
   const snakeStepMs = Math.max(118, 205 - Math.floor(score / 5) * 14);
+  const snakeCellPx = Math.max(22, Math.min((snakeBoardSize.width || 360) / snakeViewCols, (snakeBoardSize.height || 540) / snakeViewRows));
+  const snakeViewportWidthPx = snakeCellPx * snakeViewCols;
+  const snakeViewportHeightPx = snakeCellPx * snakeViewRows;
+  const snakeWorldWidthPx = snakeCellPx * snakeCols;
+  const snakeWorldHeightPx = snakeCellPx * snakeRows;
+  const snakeCamera = {
+    col: clamp(snake[0].col + 0.5 - snakeViewCols / 2, 0, snakeCols - snakeViewCols),
+    row: clamp(snake[0].row + 0.5 - snakeViewRows / 2, 0, snakeRows - snakeViewRows),
+  };
   const snakePositionStyle = useCallback(
     (cell: SnakeCell, extra?: CSSProperties) =>
       ({
-        '--snake-x': `${((cell.col + 0.5) / snakeCols) * snakeBoardSize.width}px`,
-        '--snake-y': `${((cell.row + 0.5) / snakeRows) * snakeBoardSize.height}px`,
+        '--snake-x': `${(cell.col + 0.5) * snakeCellPx}px`,
+        '--snake-y': `${(cell.row + 0.5) * snakeCellPx}px`,
         ...extra,
       }) as CSSProperties,
-    [snakeBoardSize.height, snakeBoardSize.width],
+    [snakeCellPx],
   );
 
   useEffect(() => {
@@ -2929,7 +2977,6 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
     if (statusRef.current === 'ready') {
       statusRef.current = 'playing';
       setStatus('playing');
-      setDialogue('海光路線開始了，注意短暫冒出的垃圾海葵。');
     }
     directionRef.current = next;
     setDirection(next);
@@ -2962,7 +3009,6 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
     statusRef.current = 'ready';
     setScore(0);
     setStatus('ready');
-    setDialogue('海光會引路。邊框可以穿越，無敵時海葵會變素材。');
     resetRound(3);
   }, [resetRound]);
 
@@ -2973,12 +3019,10 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
       statusRef.current = 'lost';
       setLives(0);
       setStatus('lost');
-      setDialogue('海潮被垃圾海葵堵住了，重新整隊再來。');
       return;
     }
     statusRef.current = 'ready';
     setStatus('ready');
-    setDialogue('小心！海葵只停一下，等它散開再衝。');
     resetRound(nextLives);
   }, [resetRound]);
 
@@ -2998,7 +3042,6 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
       if (invincibleUntilRef.current > 0 && invincibleUntilRef.current <= now) {
         invincibleUntilRef.current = 0;
         setInvincibleUntil(0);
-        setDialogue('無敵光退了，接下來要小心海葵。');
       }
 
       const currentSnake = snakeRef.current;
@@ -3027,7 +3070,6 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
         const clearedObstacles = activeObstacles.filter((obstacle) => !sameCell(obstacle, head));
         obstaclesRef.current = clearedObstacles;
         setObstacles(clearedObstacles);
-        setDialogue('無敵海光把海葵轉成素材，海光加倍成長。');
       }
 
       const ateFood = sameCell(head, foodRef.current);
@@ -3045,16 +3087,12 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
         invincibleUntilRef.current = nextInvincibleUntil;
         setPowerup(null);
         setInvincibleUntil(nextInvincibleUntil);
-        setDialogue('無敵海光啟動，5秒內海葵會變成加倍素材。');
       }
 
       if (ateFood || materialBonus > 0) {
         const nextScore = scoreRef.current + (ateFood ? 1 : 0) + materialBonus;
         scoreRef.current = nextScore;
         setScore(nextScore);
-        if (materialBonus === 0) {
-          setDialogue(nextScore >= snakeTarget ? '王子的海光路線完成了。' : nextScore % 5 === 0 ? '節奏很好，再收幾顆海光。' : '吃到了，尾光會跟上王子。');
-        }
         if (nextScore >= snakeTarget) {
           statusRef.current = 'won';
           setStatus('won');
@@ -3098,7 +3136,6 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
       const nextPowerup = placeSnakePowerup(snakeRef.current, foodRef.current, obstaclesRef.current);
       powerupRef.current = nextPowerup;
       setPowerup(nextPowerup);
-      setDialogue('無敵海光出現了，吃到後5秒不怕海葵，撞上海葵會轉成素材。');
     }, 10000);
     return () => window.clearInterval(timer);
   }, []);
@@ -3128,43 +3165,56 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const updateSnakePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const input = directionPadInputFromPointer(event.clientX, event.clientY, event.currentTarget);
+    setPadDirection(input.intent?.primary ?? null);
+    setPadVector(input.intent ? input.vector : { x: 0, y: 0 });
+    if (input.intent?.primary) changeDirection(input.intent.primary as SnakeDirection);
+  }, [changeDirection]);
+
+  const releaseSnakePad = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (event && movePointerRef.current !== null && event.pointerId !== movePointerRef.current) return;
+    movePointerRef.current = null;
+    setPadDirection(null);
+    setPadVector({ x: 0, y: 0 });
+  }, []);
+
+  const snakeViewportStyle: CSSProperties = {
+    width: `${snakeViewportWidthPx}px`,
+    height: `${snakeViewportHeightPx}px`,
+    ['--snake-cell-px' as string]: `${snakeCellPx}px`,
+    ['--snake-cols' as string]: snakeCols,
+    ['--snake-rows' as string]: snakeRows,
+    ['--snake-step-ms' as string]: `${snakeStepMs}ms`,
+  };
+  const snakeWorldStyle: CSSProperties = {
+    width: `${snakeWorldWidthPx}px`,
+    height: `${snakeWorldHeightPx}px`,
+    transform: `translate(${-snakeCamera.col * snakeCellPx}px, ${-snakeCamera.row * snakeCellPx}px)`,
+  };
+  const snakePadStickStyle: CSSProperties = {
+    ['--pad-x' as string]: `${padVector.x}px`,
+    ['--pad-y' as string]: `${padVector.y}px`,
+  };
+
   return (
     <section className="screen tide-screen">
-      <Header
-        title="海潮部落"
-        onBack={onBack}
-        action={
-          <button onClick={restart} aria-label="重新開始">
-            <RotateCcw size={20} />
-          </button>
-        }
-      />
-      <div className="tide-cast-panel">
-        <img className="tide-cast parrot" src={assets.parrotfishHost} alt="" aria-hidden="true" />
-        <div className="tide-dialogue">
-          <p>{dialogue}</p>
-        </div>
-        <img className="tide-cast wrasse" src={assets.napoleonWrasseHost} alt="" aria-hidden="true" />
+      <div className="snake-nav">
+        <button className="icon-button" onClick={onBack} aria-label="返回">
+          <ChevronLeft size={20} />
+        </button>
+        <button className="icon-button" onClick={restart} aria-label="重新開始">
+          <RotateCcw size={20} />
+        </button>
       </div>
-      <div className="snake-panel">
-        <div className="snake-hud">
-          <span>
-            海光 <strong>{score}/{snakeTarget}</strong>
-          </span>
-          <span>
-            命 <strong>{lives}/3</strong>
-          </span>
-          {invincibleUntil > performance.now() && (
-            <span className="snake-invincible">
-              <Sparkles size={13} />
-              無敵
-            </span>
-          )}
-        </div>
+      <div className="snake-panel" ref={snakeBoardRef}>
         <div
           className={`snake-board ${skipSnakeTransition ? 'no-snake-transition' : ''}`}
-          ref={snakeBoardRef}
-          style={{ '--snake-cols': snakeCols, '--snake-rows': snakeRows, '--snake-step-ms': `${snakeStepMs}ms` } as CSSProperties}
+          style={snakeViewportStyle}
           onPointerDown={(event) => {
             touchStart.current = { x: event.clientX, y: event.clientY };
           }}
@@ -3173,60 +3223,85 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
             touchStart.current = null;
           }}
         >
-          <span className="snake-food" style={{ left: `${((food.col + 0.5) / snakeCols) * 100}%`, top: `${((food.row + 0.5) / snakeRows) * 100}%` }} />
-          {snake.map((cell, index) =>
-            index === 0 ? (
+          <div className="snake-world" style={snakeWorldStyle}>
+            <span className="snake-food" style={snakePositionStyle(food)} />
+            {snake.map((cell, index) =>
+              index === 0 ? (
+                <img
+                  className={`snake-head face-${direction} ${invincibleUntil > performance.now() ? 'invincible' : ''}`}
+                  key="snake-head"
+                  src={assets.princeIcon}
+                  alt=""
+                  style={snakePositionStyle(cell)}
+                />
+              ) : (
+                <span
+                  className="snake-segment"
+                  key={`snake-segment-${index}`}
+                  style={snakePositionStyle(cell, { opacity: clamp(1 - index * 0.025, 0.4, 0.92) })}
+                />
+              ),
+            )}
+            {obstacles.map((obstacle) => (
               <img
-                className={`snake-head face-${direction} ${invincibleUntil > performance.now() ? 'invincible' : ''}`}
-                key="snake-head"
-                src={assets.princeIcon}
+                className="snake-obstacle"
+                key={obstacle.id}
+                src={assets.bossStates.idle}
                 alt=""
-                style={snakePositionStyle(cell)}
+                style={snakePositionStyle(obstacle)}
               />
-            ) : (
-              <span
-                className="snake-segment"
-                key={`snake-segment-${index}`}
-                style={snakePositionStyle(cell, { opacity: clamp(1 - index * 0.025, 0.4, 0.92) })}
+            ))}
+            {powerup && (
+              <img
+                className="snake-powerup"
+                src={assets.pickup}
+                alt=""
+                style={snakePositionStyle(powerup)}
               />
-            ),
-          )}
-          {obstacles.map((obstacle) => (
-            <img
-              className="snake-obstacle"
-              key={obstacle.id}
-              src={assets.bossStates.idle}
-              alt=""
-              style={{ left: `${((obstacle.col + 0.5) / snakeCols) * 100}%`, top: `${((obstacle.row + 0.5) / snakeRows) * 100}%` }}
-            />
-          ))}
-          {powerup && (
-            <img
-              className="snake-powerup"
-              src={assets.pickup}
-              alt=""
-              style={{ left: `${((powerup.col + 0.5) / snakeCols) * 100}%`, top: `${((powerup.row + 0.5) / snakeRows) * 100}%` }}
-            />
-          )}
-          {wrapEffect && (
-            <>
-              <span className="snake-portal exit" key={`portal-exit-${wrapEffect.id}`} style={snakePositionStyle(wrapEffect.from)} />
-              <span className="snake-portal entry" key={`portal-entry-${wrapEffect.id}`} style={snakePositionStyle(wrapEffect.to)} />
-            </>
-          )}
-          <div className="snake-controls" aria-label="方向控制">
-            <button className={direction === 'up' ? 'active' : ''} onClick={() => changeDirection('up')} aria-label="向上">
-              <ChevronUp size={20} />
-            </button>
-            <button className={direction === 'left' ? 'active' : ''} onClick={() => changeDirection('left')} aria-label="向左">
-              <ChevronLeft size={20} />
-            </button>
-            <button className={direction === 'right' ? 'active' : ''} onClick={() => changeDirection('right')} aria-label="向右">
-              <ChevronRight size={20} />
-            </button>
-            <button className={direction === 'down' ? 'active' : ''} onClick={() => changeDirection('down')} aria-label="向下">
-              <ChevronDown size={20} />
-            </button>
+            )}
+            {wrapEffect && (
+              <>
+                <span className="snake-portal exit" key={`portal-exit-${wrapEffect.id}`} style={snakePositionStyle(wrapEffect.from)} />
+                <span className="snake-portal entry" key={`portal-entry-${wrapEffect.id}`} style={snakePositionStyle(wrapEffect.to)} />
+              </>
+            )}
+          </div>
+          <div className="snake-hud">
+            <span>
+              海光 <strong>{score}/{snakeTarget}</strong>
+            </span>
+            <span>
+              命 <strong>{lives}/3</strong>
+            </span>
+            {invincibleUntil > performance.now() && (
+              <span className="snake-invincible">
+                <Sparkles size={13} />
+                無敵
+              </span>
+            )}
+          </div>
+          <div
+            className={`snake-controls ${padDirection ? `active-${padDirection}` : ''}`}
+            aria-label="方向控制"
+            onPointerDown={(event) => {
+              if (movePointerRef.current !== null) return;
+              movePointerRef.current = event.pointerId;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              updateSnakePad(event);
+            }}
+            onPointerMove={(event) => {
+              if (movePointerRef.current === event.pointerId) updateSnakePad(event);
+            }}
+            onPointerUp={releaseSnakePad}
+            onPointerCancel={releaseSnakePad}
+            onLostPointerCapture={releaseSnakePad}
+          >
+            <span className="snake-stick-base" />
+            <span className="snake-stick-arrow up"><ChevronUp size={14} /></span>
+            <span className="snake-stick-arrow left"><ChevronLeft size={14} /></span>
+            <span className="snake-stick-arrow right"><ChevronRight size={14} /></span>
+            <span className="snake-stick-arrow down"><ChevronDown size={14} /></span>
+            <span className="snake-stick" style={snakePadStickStyle} />
           </div>
           {(status === 'won' || status === 'lost') && (
             <div className="snake-result">
@@ -3638,7 +3713,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const shotsRef = useRef<CityShot[]>([]);
   const powerupsRef = useRef<CityPowerup[]>([]);
   const keysRef = useRef({ fire: false });
-  const heldDirectionRef = useRef<CityDirection | null>(null);
+  const heldDirectionRef = useRef<DirectionPadIntent>(null);
   const nextPlayerStepAt = useRef(0);
   const movePointerRef = useRef<number | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -3657,6 +3732,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const [freezeUntil, setFreezeUntil] = useState(0);
   const [pierceUntil, setPierceUntil] = useState(0);
   const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
+  const [padVector, setPadVector] = useState<DirectionPadVector>({ x: 0, y: 0 });
   const [notice, setNotice] = useState<CityNotice | null>(null);
   const baseHpRef = useRef(cityStartingBaseHp);
   const armorRef = useRef(cityStartingArmor);
@@ -3710,6 +3786,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     setFreezeUntil(0);
     setPierceUntil(0);
     setPadDirection(null);
+    setPadVector({ x: 0, y: 0 });
     showCityNotice('spawn', '新地圖');
   }, [showCityNotice]);
 
@@ -3732,19 +3809,29 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     if (statusRef.current === 'playing' && cityCanOccupy(next.x, next.y, tilesRef.current, enemiesRef.current)) {
       currentPlayer.x = next.x;
       currentPlayer.y = next.y;
+      playerRef.current = currentPlayer;
+      return true;
     }
     playerRef.current = currentPlayer;
+    return false;
   }, []);
 
-  const holdPlayerDirection = useCallback((direction: CityDirection | null, startTime = performance.now()) => {
-    if (heldDirectionRef.current === direction) return;
-    heldDirectionRef.current = direction;
-    setPadDirection(direction);
-    if (direction) {
-      movePlayerStep(direction);
+  const movePlayerIntent = useCallback((intent: DirectionPadIntent) => {
+    if (!intent) return;
+    if (movePlayerStep(intent.primary)) return;
+    if (intent.secondary) movePlayerStep(intent.secondary);
+  }, [movePlayerStep]);
+
+  const holdPlayerDirection = useCallback((intent: DirectionPadIntent, vector: DirectionPadVector = { x: 0, y: 0 }, startTime = performance.now()) => {
+    const sameIntent = directionPadIntentsEqual(heldDirectionRef.current, intent);
+    heldDirectionRef.current = intent;
+    setPadDirection(intent?.primary ?? null);
+    setPadVector(intent ? vector : { x: 0, y: 0 });
+    if (intent && !sameIntent) {
+      movePlayerIntent(intent);
       nextPlayerStepAt.current = startTime + cityPlayerStepDelayMs;
     }
-  }, [movePlayerStep]);
+  }, [movePlayerIntent]);
 
   const setFirePressed = useCallback((pressed: boolean) => {
     keysRef.current.fire = pressed;
@@ -3760,27 +3847,32 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     movePlayerStep(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up');
   }, [movePlayerStep]);
 
-  const directionFromMovePad = useCallback((clientX: number, clientY: number, target: HTMLElement): CityDirection | null => {
-    const rect = target.getBoundingClientRect();
-    const dx = clientX - (rect.left + rect.width / 2);
-    const dy = clientY - (rect.top + rect.height / 2);
-    const deadzone = Math.min(rect.width, rect.height) * 0.16;
-    if (Math.hypot(dx, dy) < deadzone) return null;
-    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
-    return dy > 0 ? 'down' : 'up';
-  }, []);
-
   const updateMovePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
-    const direction = directionFromMovePad(event.clientX, event.clientY, event.currentTarget);
-    holdPlayerDirection(direction);
-  }, [directionFromMovePad, holdPlayerDirection]);
+    event.stopPropagation();
+    const input = directionPadInputFromPointer(event.clientX, event.clientY, event.currentTarget);
+    holdPlayerDirection(input.intent, input.vector);
+  }, [holdPlayerDirection]);
 
   const releaseMovePad = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
     if (event && movePointerRef.current !== null && event.pointerId !== movePointerRef.current) return;
     movePointerRef.current = null;
     holdPlayerDirection(null);
   }, [holdPlayerDirection]);
+
+  const pressCityFire = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setFirePressed(true);
+  }, [setFirePressed]);
+
+  const releaseCityFire = useCallback((event?: ReactPointerEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    setFirePressed(false);
+  }, [setFirePressed]);
 
   useEffect(() => {
     const directionFromKey = (event: KeyboardEvent): CityDirection | null => {
@@ -3792,8 +3884,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     };
     const onKeyDown = (event: KeyboardEvent) => {
       const direction = directionFromKey(event);
-      if (direction && heldDirectionRef.current !== direction) {
-        holdPlayerDirection(direction);
+      if (direction && heldDirectionRef.current?.primary !== direction) {
+        holdPlayerDirection({ primary: direction }, directionPadVectorFromDirection(direction));
         event.preventDefault();
       }
       if (event.key === ' ' || event.key.toLowerCase() === 'j' || event.key.toLowerCase() === 'k') {
@@ -3803,7 +3895,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     };
     const onKeyUp = (event: KeyboardEvent) => {
       const direction = directionFromKey(event);
-      if (direction && heldDirectionRef.current === direction) {
+      if (direction && heldDirectionRef.current?.primary === direction) {
         holdPlayerDirection(null);
         event.preventDefault();
       }
@@ -3827,9 +3919,9 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
       lastTime.current = time;
 
       if (statusRef.current === 'playing') {
-        const heldDirection = heldDirectionRef.current;
-        if (heldDirection && time >= nextPlayerStepAt.current) {
-          movePlayerStep(heldDirection);
+        const heldIntent = heldDirectionRef.current;
+        if (heldIntent && time >= nextPlayerStepAt.current) {
+          movePlayerIntent(heldIntent);
           nextPlayerStepAt.current = time + cityPlayerStepDelayMs;
         }
         const currentTiles = tilesRef.current;
@@ -4097,7 +4189,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [movePlayerStep, showCityNotice]);
+  }, [movePlayerIntent, showCityNotice]);
 
   const cityCellPx = Math.max(18, Math.min((arenaSize.width || 360) / cityViewCols, (arenaSize.height || 520) / cityViewRows));
   const cityViewportWidthPx = cityCellPx * cityViewCols;
@@ -4125,18 +4217,21 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const rapid = rapidUntil > performance.now();
   const piercing = pierceUntil > performance.now();
   const enemiesFrozen = freezeUntil > performance.now();
+  const cityPadStickStyle: CSSProperties = {
+    ['--pad-x' as string]: `${padVector.x}px`,
+    ['--pad-y' as string]: `${padVector.y}px`,
+  };
 
   return (
     <section className="screen city-screen">
-      <Header
-        title="海底城市"
-        onBack={onBack}
-        action={
-          <button onClick={restart} aria-label="重新開始">
-            <RotateCcw size={20} />
-          </button>
-        }
-      />
+      <div className="city-nav">
+        <button className="icon-button" onClick={onBack} aria-label="返回">
+          <ChevronLeft size={20} />
+        </button>
+        <button className="icon-button" onClick={restart} aria-label="重新開始">
+          <RotateCcw size={20} />
+        </button>
+      </div>
       <div className="city-arena" ref={arenaRef}>
         <div
           className="city-viewport"
@@ -4217,25 +4312,19 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             onPointerCancel={releaseMovePad}
             onLostPointerCapture={releaseMovePad}
           >
-            <button type="button" tabIndex={-1} aria-label="向上">
-              <ChevronUp size={20} />
-            </button>
-            <button type="button" tabIndex={-1} aria-label="向左">
-              <ChevronLeft size={20} />
-            </button>
-            <button type="button" tabIndex={-1} aria-label="向右">
-              <ChevronRight size={20} />
-            </button>
-            <button type="button" tabIndex={-1} aria-label="向下">
-              <ChevronDown size={20} />
-            </button>
+            <span className="city-stick-base" />
+            <span className="city-stick-arrow up"><ChevronUp size={14} /></span>
+            <span className="city-stick-arrow left"><ChevronLeft size={14} /></span>
+            <span className="city-stick-arrow right"><ChevronRight size={14} /></span>
+            <span className="city-stick-arrow down"><ChevronDown size={14} /></span>
+            <span className="city-stick" style={cityPadStickStyle} />
           </div>
           <button
             className="city-fire-control"
-            onPointerDown={() => setFirePressed(true)}
-            onPointerUp={() => setFirePressed(false)}
-            onPointerCancel={() => setFirePressed(false)}
-            onPointerLeave={() => setFirePressed(false)}
+            onPointerDown={pressCityFire}
+            onPointerUp={releaseCityFire}
+            onPointerCancel={releaseCityFire}
+            onPointerLeave={releaseCityFire}
             aria-label="攻擊"
           >
             <Swords size={24} />
