@@ -1,4 +1,4 @@
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, Gem, Play, RotateCcw, Search, Sparkles, Swords, Zap } from 'lucide-react';
 import { playGameSfx, startOceanBgm, stopOceanBgm } from './audio';
 
@@ -4271,6 +4271,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
   const statusRef = useRef<LightBombStatus>('playing');
   const heldDirectionRef = useRef<LightBombPadIntent>(null);
   const movePointerRef = useRef<number | null>(null);
+  const actionPointerAtRef = useRef(0);
   const remoteTriggerRef = useRef<number | null>(null);
   const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
   const [tiles, setTiles] = useState<LightBombTile[]>(firstLevel.tiles);
@@ -4466,6 +4467,21 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     movePointerRef.current = null;
     holdDirection(null);
   }, [holdDirection]);
+
+  const pressBombAction = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    actionPointerAtRef.current = performance.now();
+    placeOrTriggerBomb();
+  }, [placeOrTriggerBomb]);
+
+  const clickBombAction = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (performance.now() - actionPointerAtRef.current < 420) {
+      event.preventDefault();
+      return;
+    }
+    placeOrTriggerBomb();
+  }, [placeOrTriggerBomb]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -4762,7 +4778,12 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
             <span className="lightbomb-stick-arrow down"><ChevronDown size={14} /></span>
             <span className="lightbomb-stick" style={padStickStyle} />
           </div>
-          <button className={`lightbomb-action ${remote ? 'remote' : ''}`} onClick={placeOrTriggerBomb} aria-label="放置海光爆彈">
+          <button
+            className={`lightbomb-action ${remote ? 'remote' : ''}`}
+            onPointerDown={pressBombAction}
+            onClick={clickBombAction}
+            aria-label="放置海光爆彈"
+          >
             <Sparkles size={24} />
           </button>
           {status !== 'playing' && (
