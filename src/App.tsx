@@ -1,6 +1,6 @@
 import { type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, Gem, Play, RotateCcw, Search, Sparkles, Swords, Zap } from 'lucide-react';
-import { playGameSfx, startOceanBgm, stopOceanBgm } from './audio';
+import { playGameSfx, setOceanBgmIntensity, startOceanBgm, stopOceanBgm } from './audio';
 
 function assetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
@@ -270,6 +270,14 @@ type LightBombPowerup = {
   col: number;
 };
 type LightBombEnemyKind = 'squid' | 'urchin' | 'anemone';
+type LightBombCharacterId = 'prince' | 'panther' | 'doubleBand' | 'panda';
+type LightBombCharacterDef = {
+  id: LightBombCharacterId;
+  name: string;
+  ability: string;
+  image: string;
+  start: Pick<LightBombPlayer, 'range' | 'maxBombs' | 'moveMs' | 'kick' | 'pierceBombs'>;
+};
 type LightBombEnemy = {
   id: number;
   kind: LightBombEnemyKind;
@@ -281,6 +289,7 @@ type LightBombEnemy = {
   moveAt: number;
 };
 type LightBombPlayer = {
+  character: LightBombCharacterId;
   row: number;
   col: number;
   x: number;
@@ -290,6 +299,7 @@ type LightBombPlayer = {
   maxBombs: number;
   moveMs: number;
   kick: boolean;
+  pierceBombs: boolean;
   shieldUntil: number;
   remoteUntil: number;
 };
@@ -302,6 +312,7 @@ type LightBombBomb = {
   range: number;
   explodeAt: number;
   remote: boolean;
+  piercing: boolean;
   kickedDir?: CityDirection;
   moveAt: number;
 };
@@ -321,7 +332,15 @@ type LightBombLevel = {
   enemies: LightBombEnemy[];
   exit: LightBombExit;
 };
-type LightBombStatus = 'playing' | 'won' | 'lost';
+type LightBombLevelConfig = {
+  stage: number;
+  title: string;
+  enemyCount: number;
+  enemyDelayScale: number;
+  powerupCount: number;
+  musicIntensity: number;
+};
+type LightBombStatus = 'select' | 'playing' | 'won' | 'lost';
 type LightBombNotice = {
   id: number;
   kind: LightBombPowerupKind | 'door' | 'hit';
@@ -372,10 +391,13 @@ const assets = {
   princeIcon: assetUrl('/assets/mobile/icons/prince-clownfish-circle-v01.png?v=20260529'),
   lightBombHeads: {
     prince: assetUrl('/assets/mobile/lightbomb/prince-head-v01.png?v=20260601'),
+    panther: assetUrl('/assets/mobile/hosts/black-panther-ninja-setting-cutout-v01.png?v=20260528'),
+    doubleBand: assetUrl('/assets/mobile/icons/double-band-samurai-portrait-v01.webp?v=20260602'),
+    panda: assetUrl('/assets/mobile/posters/panda-sumo-poster.webp?v=20260602'),
     squid: assetUrl('/assets/mobile/lightbomb/squid-head-v01.png?v=20260601'),
     urchin: assetUrl('/assets/mobile/lightbomb/urchin-head-v01.png?v=20260601'),
     anemone: assetUrl('/assets/mobile/lightbomb/anemone-head-v01.png?v=20260601'),
-  } satisfies Record<'prince' | LightBombEnemyKind, string>,
+  } satisfies Record<LightBombCharacterId | LightBombEnemyKind, string>,
   mechaSquid: {
     up: assetUrl('/assets/mobile/enemies/mecha-squid-up-cutout.webp?v=20260530b'),
     down: assetUrl('/assets/mobile/enemies/mecha-squid-down-cutout.webp?v=20260530b'),
@@ -412,6 +434,56 @@ const assets = {
   pickup: assetUrl('/assets/mobile/pickups/ocean-light-energy-v01.webp'),
   sharkStatue: assetUrl('/assets/mobile/victory/shark-war-god-statue.webp'),
 };
+
+const lightBombCharacters: LightBombCharacterDef[] = [
+  {
+    id: 'prince',
+    name: '公子王子',
+    ability: '光爆穿透',
+    image: assets.lightBombHeads.prince,
+    start: { range: 2, maxBombs: 1, moveMs: 178, kick: false, pierceBombs: true },
+  },
+  {
+    id: 'panther',
+    name: '黑豹忍者小丑',
+    ability: '初始兩顆光爆',
+    image: assets.lightBombHeads.panther,
+    start: { range: 2, maxBombs: 2, moveMs: 178, kick: false, pierceBombs: false },
+  },
+  {
+    id: 'doubleBand',
+    name: '雙帶小丑',
+    ability: '火力 4 級',
+    image: assets.lightBombHeads.doubleBand,
+    start: { range: 4, maxBombs: 1, moveMs: 178, kick: false, pierceBombs: false },
+  },
+  {
+    id: 'panda',
+    name: '熊貓相撲',
+    ability: '初始踢光爆',
+    image: assets.lightBombHeads.panda,
+    start: { range: 2, maxBombs: 1, moveMs: 178, kick: true, pierceBombs: false },
+  },
+];
+
+function lightBombCharacterDef(id: LightBombCharacterId) {
+  return lightBombCharacters.find((character) => character.id === id) ?? lightBombCharacters[0];
+}
+
+function createLightBombPlayer(characterId: LightBombCharacterId, carry?: LightBombPlayer): LightBombPlayer {
+  const character = lightBombCharacterDef(characterId);
+  return {
+    ...lightBombPlayerStart,
+    character: character.id,
+    range: Math.max(character.start.range, carry?.range ?? 0),
+    maxBombs: Math.max(character.start.maxBombs, carry?.maxBombs ?? 0),
+    moveMs: Math.min(character.start.moveMs, carry?.moveMs ?? character.start.moveMs),
+    kick: character.start.kick || carry?.kick || false,
+    pierceBombs: character.start.pierceBombs || carry?.pierceBombs || false,
+    remoteUntil: carry?.remoteUntil ?? 0,
+    shieldUntil: carry?.shieldUntil ?? 0,
+  };
+}
 
 const videoLeadIns = {
   startGame: {
@@ -829,8 +901,14 @@ const lightBombCols = 31;
 const lightBombViewRows = 17;
 const lightBombViewCols = 10;
 const lightBombKickStepMs = 82;
-const lightBombEnemyCount = 20;
+const lightBombLevels: LightBombLevelConfig[] = [
+  { stage: 1, title: '第一迷宮', enemyCount: 20, enemyDelayScale: 1, powerupCount: 12, musicIntensity: 1 },
+  { stage: 2, title: '第二迷宮', enemyCount: 26, enemyDelayScale: 0.82, powerupCount: 14, musicIntensity: 1.28 },
+  { stage: 3, title: '第三迷宮', enemyCount: 32, enemyDelayScale: 0.66, powerupCount: 16, musicIntensity: 1.55 },
+];
+const lightBombMaxStage = lightBombLevels.length;
 const lightBombPlayerStart: LightBombPlayer = {
+  character: 'prince',
   row: 1,
   col: 1,
   x: 1,
@@ -840,6 +918,7 @@ const lightBombPlayerStart: LightBombPlayer = {
   maxBombs: 1,
   moveMs: 178,
   kick: false,
+  pierceBombs: true,
   shieldUntil: 0,
   remoteUntil: 0,
 };
@@ -1297,6 +1376,10 @@ function lightBombShuffle<T>(items: T[]) {
   return [...items].sort(() => Math.random() - 0.5);
 }
 
+function lightBombLevelConfig(stage: number) {
+  return lightBombLevels[clamp(stage, 1, lightBombMaxStage) - 1];
+}
+
 function lightBombProtected(row: number, col: number) {
   return (
     (row <= 3 && col <= 3) ||
@@ -1313,7 +1396,7 @@ function lightBombBlocks(tile?: LightBombTile) {
   return tile?.kind === 'solid' || tile?.kind === 'soft';
 }
 
-function createLightBombEnemy(id: number, kind: LightBombEnemyKind, row: number, col: number): LightBombEnemy {
+function createLightBombEnemy(id: number, kind: LightBombEnemyKind, row: number, col: number, config = lightBombLevelConfig(1)): LightBombEnemy {
   return {
     id,
     kind,
@@ -1322,7 +1405,7 @@ function createLightBombEnemy(id: number, kind: LightBombEnemyKind, row: number,
     x: col,
     y: row,
     dir: lightBombDirections[Math.floor(Math.random() * lightBombDirections.length)],
-    moveAt: 650 + Math.random() * 850,
+    moveAt: performance.now() + (650 + Math.random() * 850) * config.enemyDelayScale,
   };
 }
 
@@ -1331,7 +1414,7 @@ function lightBombPadVectorFromDirection(direction: CityDirection): LightBombPad
   return { x: vector.x * 31, y: vector.y * 31 };
 }
 
-function createLightBombLevel(): LightBombLevel {
+function createLightBombLevel(config = lightBombLevelConfig(1)): LightBombLevel {
   const tiles: LightBombTile[] = [];
   const occupied = new Set<string>();
   let id = 1;
@@ -1378,7 +1461,7 @@ function createLightBombLevel(): LightBombLevel {
   const exit = farSoft[0] ?? { row: lightBombRows - 2, col: lightBombCols - 2 };
   const powerupKinds: LightBombPowerupKind[] = ['flame', 'flame', 'bomb', 'bomb', 'speed', 'speed', 'kick', 'remote', 'shield', 'flame', 'bomb', 'shield'];
   const hiddenPowerups = lightBombShuffle(softCells.filter((cell) => lightBombKey(cell.row, cell.col) !== lightBombKey(exit.row, exit.col)))
-    .slice(0, 24)
+    .slice(0, config.powerupCount)
     .map((cell, index) => ({
       id: index + 1,
       row: cell.row,
@@ -1386,8 +1469,8 @@ function createLightBombLevel(): LightBombLevel {
       kind: powerupKinds[index % powerupKinds.length],
     }));
 
-  const spawnCells = lightBombShuffle(openCells.filter((cell) => Math.abs(cell.row - 1) + Math.abs(cell.col - 1) > 14)).slice(0, lightBombEnemyCount);
-  const enemies = spawnCells.map((cell, index) => createLightBombEnemy(100 + index, lightBombEnemyPattern[index % lightBombEnemyPattern.length], cell.row, cell.col));
+  const spawnCells = lightBombShuffle(openCells.filter((cell) => Math.abs(cell.row - 1) + Math.abs(cell.col - 1) > 14)).slice(0, config.enemyCount);
+  const enemies = spawnCells.map((cell, index) => createLightBombEnemy(100 + index, lightBombEnemyPattern[index % lightBombEnemyPattern.length], cell.row, cell.col, config));
 
   return { tiles, hiddenPowerups, enemies, exit };
 }
@@ -1819,7 +1902,7 @@ export default function App() {
       return;
     }
     if (videoLeadIn.destination === 'lightbomb') {
-      void startOceanBgm();
+      void startOceanBgm('lightbomb', 1);
       setScreen('lightbomb');
       return;
     }
@@ -4733,13 +4816,15 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
 }
 
 function LightBombMazeGame({ onBack }: { onBack: () => void }) {
-  const firstLevel = useMemo(() => createLightBombLevel(), []);
+  const firstLevel = useMemo(() => createLightBombLevel(lightBombLevelConfig(1)), []);
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastTime = useRef<number | null>(null);
   const nextId = useRef(1000);
   const noticeId = useRef(0);
-  const playerRef = useRef<LightBombPlayer>({ ...lightBombPlayerStart });
+  const selectedCharacterRef = useRef<LightBombCharacterId>('prince');
+  const stageRef = useRef(1);
+  const playerRef = useRef<LightBombPlayer>(createLightBombPlayer('prince'));
   const tilesRef = useRef<LightBombTile[]>(firstLevel.tiles);
   const hiddenPowerupsRef = useRef<LightBombPowerup[]>(firstLevel.hiddenPowerups);
   const powerupsRef = useRef<LightBombPowerup[]>([]);
@@ -4748,14 +4833,16 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
   const explosionsRef = useRef<LightBombExplosion[]>([]);
   const exitRef = useRef<LightBombExit>(firstLevel.exit);
   const exitRevealedRef = useRef(false);
-  const statusRef = useRef<LightBombStatus>('playing');
+  const statusRef = useRef<LightBombStatus>('select');
   const heldDirectionRef = useRef<LightBombPadIntent>(null);
   const movePointerRef = useRef<number | null>(null);
   const actionPointerAtRef = useRef(0);
   const remoteTriggerRef = useRef<number | null>(null);
   const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
+  const [selectedCharacter, setSelectedCharacter] = useState<LightBombCharacterId | null>(null);
+  const [stage, setStage] = useState(1);
   const [tiles, setTiles] = useState<LightBombTile[]>(firstLevel.tiles);
-  const [player, setPlayer] = useState<LightBombPlayer>({ ...lightBombPlayerStart });
+  const [player, setPlayer] = useState<LightBombPlayer>(() => createLightBombPlayer('prince'));
   const [enemies, setEnemies] = useState<LightBombEnemy[]>(firstLevel.enemies);
   const [bombs, setBombs] = useState<LightBombBomb[]>([]);
   const [explosions, setExplosions] = useState<LightBombExplosion[]>([]);
@@ -4763,7 +4850,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
   const [exit, setExit] = useState<LightBombExit>(firstLevel.exit);
   const [exitFound, setExitFound] = useState(false);
   const [exitVisible, setExitVisible] = useState(false);
-  const [status, setStatus] = useState<LightBombStatus>('playing');
+  const [status, setStatus] = useState<LightBombStatus>('select');
   const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
   const [padVector, setPadVector] = useState<LightBombPadVector>({ x: 0, y: 0 });
   const [notice, setNotice] = useState<LightBombNotice>(null);
@@ -4773,8 +4860,13 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     setNotice({ id: noticeId.current, kind, text });
   }, []);
 
-  const applyLevel = useCallback((level: LightBombLevel) => {
-    playerRef.current = { ...lightBombPlayerStart };
+  const applyLevel = useCallback((level: LightBombLevel, options: { stage: number; character: LightBombCharacterId; carryPlayer?: LightBombPlayer; notice?: string }) => {
+    const nextStage = clamp(options.stage, 1, lightBombMaxStage);
+    const config = lightBombLevelConfig(nextStage);
+    const nextPlayer = createLightBombPlayer(options.character, options.carryPlayer);
+    selectedCharacterRef.current = options.character;
+    stageRef.current = nextStage;
+    playerRef.current = nextPlayer;
     tilesRef.current = level.tiles;
     hiddenPowerupsRef.current = level.hiddenPowerups;
     powerupsRef.current = [];
@@ -4789,8 +4881,10 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     remoteTriggerRef.current = null;
     lastTime.current = null;
     nextId.current = 1000;
+    setSelectedCharacter(options.character);
+    setStage(nextStage);
     setTiles(level.tiles);
-    setPlayer({ ...lightBombPlayerStart });
+    setPlayer(nextPlayer);
     setEnemies(level.enemies);
     setBombs([]);
     setExplosions([]);
@@ -4801,12 +4895,37 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     setStatus('playing');
     setPadDirection(null);
     setPadVector({ x: 0, y: 0 });
-    showNotice('door', '新迷宮');
+    setOceanBgmIntensity(config.musicIntensity);
+    showNotice('door', options.notice ?? config.title);
   }, [showNotice]);
 
-  const restart = useCallback(() => {
-    applyLevel(createLightBombLevel());
+  const startRun = useCallback((characterId: LightBombCharacterId) => {
+    const config = lightBombLevelConfig(1);
+    playGameSfx('select');
+    void startOceanBgm('lightbomb', config.musicIntensity);
+    applyLevel(createLightBombLevel(config), {
+      stage: 1,
+      character: characterId,
+      notice: `${lightBombCharacterDef(characterId).name}出擊`,
+    });
   }, [applyLevel]);
+
+  const restart = useCallback(() => {
+    const characterId = selectedCharacterRef.current;
+    startRun(characterId);
+  }, [startRun]);
+
+  const returnToSelect = useCallback(() => {
+    statusRef.current = 'select';
+    heldDirectionRef.current = null;
+    movePointerRef.current = null;
+    setStatus('select');
+    setSelectedCharacter(null);
+    setPadDirection(null);
+    setPadVector({ x: 0, y: 0 });
+    setNotice(null);
+    setOceanBgmIntensity(1);
+  }, []);
 
   useEffect(() => {
     const arena = arenaRef.current;
@@ -4844,6 +4963,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
   }, [canEnterCell, showNotice]);
 
   const tryMovePlayer = useCallback((direction: CityDirection) => {
+    if (statusRef.current !== 'playing') return false;
     const player = { ...playerRef.current, dir: direction };
     if (Math.abs(player.x - player.col) + Math.abs(player.y - player.row) > 0.08) {
       playerRef.current = player;
@@ -4892,6 +5012,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
       y: player.row,
       range: player.range,
       remote,
+      piercing: player.pierceBombs,
       explodeAt: now + (remote ? 8000 : 2350),
       moveAt: 0,
     };
@@ -4968,7 +5089,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
       const key = event.key.toLowerCase();
       const direction = event.key === 'ArrowUp' || key === 'w' ? 'up' : event.key === 'ArrowDown' || key === 's' ? 'down' : event.key === 'ArrowLeft' || key === 'a' ? 'left' : event.key === 'ArrowRight' || key === 'd' ? 'right' : null;
       if (direction) {
-        holdDirection({ primary: direction }, lightBombPadVectorFromDirection(direction));
+        if (statusRef.current === 'playing') holdDirection({ primary: direction }, lightBombPadVectorFromDirection(direction));
         event.preventDefault();
       }
       if (event.key === ' ' || key === 'j' || key === 'k') {
@@ -4996,6 +5117,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
       lastTime.current = time;
 
       if (statusRef.current === 'playing') {
+        const levelConfig = lightBombLevelConfig(stageRef.current);
         const held = heldDirectionRef.current;
         if (held) tryMoveIntent(held);
 
@@ -5046,7 +5168,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
               if (tile?.kind === 'soft') {
                 nextTiles = nextTiles.filter((item) => item.id !== tile.id);
                 revealCell(row, col);
-                break;
+                if (!bomb.piercing) break;
               }
             }
           });
@@ -5102,9 +5224,9 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
               nextEnemy.col += vector.x;
               nextEnemy.dir = direction;
             }
-            nextEnemy.moveAt = time + lightBombEnemyDelays[nextEnemy.kind] + Math.random() * 260;
+            nextEnemy.moveAt = time + lightBombEnemyDelays[nextEnemy.kind] * levelConfig.enemyDelayScale + Math.random() * 220 * levelConfig.enemyDelayScale;
           }
-          const moveMs = lightBombEnemyDelays[nextEnemy.kind] * 0.75;
+          const moveMs = lightBombEnemyDelays[nextEnemy.kind] * 0.75 * levelConfig.enemyDelayScale;
           nextEnemy.x = lightBombVisualStep(nextEnemy.x, nextEnemy.col, dt, moveMs);
           nextEnemy.y = lightBombVisualStep(nextEnemy.y, nextEnemy.row, dt, moveMs);
           return nextEnemy;
@@ -5141,10 +5263,23 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
           showNotice('door', '出口開啟');
         }
         if (visibleExit && lightBombCellsEqual(currentPlayer, exitRef.current)) {
-          statusRef.current = 'won';
-          setStatus('won');
           playGameSfx('door');
-          showNotice('door', '通路開啟');
+          if (stageRef.current < lightBombMaxStage) {
+            const nextStage = stageRef.current + 1;
+            const nextConfig = lightBombLevelConfig(nextStage);
+            applyLevel(createLightBombLevel(nextConfig), {
+              stage: nextStage,
+              character: selectedCharacterRef.current,
+              carryPlayer: currentPlayer,
+              notice: `${nextConfig.title}展開`,
+            });
+            rafRef.current = requestAnimationFrame(tick);
+            return;
+          } else {
+            statusRef.current = 'won';
+            setStatus('won');
+            showNotice('door', '三層通路開啟');
+          }
         }
 
         playerRef.current = currentPlayer;
@@ -5171,7 +5306,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [canEnterCell, showNotice, tryMoveIntent]);
+  }, [applyLevel, canEnterCell, showNotice, tryMoveIntent]);
 
   const cellPx = Math.max(17, Math.min((arenaSize.width || 360) / lightBombViewCols, (arenaSize.height || 520) / lightBombViewRows));
   const worldPx = cellPx * lightBombCols;
@@ -5195,6 +5330,42 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     ['--pad-x' as string]: `${padVector.x}px`,
     ['--pad-y' as string]: `${padVector.y}px`,
   };
+  const currentLevelConfig = lightBombLevelConfig(stage);
+  const currentCharacter = lightBombCharacterDef(player.character);
+
+  if (status === 'select') {
+    return (
+      <section className="screen lightbomb-screen">
+        <div className="lightbomb-nav">
+          <button className="icon-button" onClick={onBack} aria-label="返回">
+            <ChevronLeft size={20} />
+          </button>
+          <button className="icon-button" onClick={returnToSelect} aria-label="重新選角">
+            <RotateCcw size={20} />
+          </button>
+        </div>
+        <div className="lightbomb-select">
+          <div className="lightbomb-select-title">
+            <strong>海光迷宮</strong>
+            <span>選擇出戰角色</span>
+          </div>
+          <div className="lightbomb-roster">
+            {lightBombCharacters.map((character) => (
+              <button
+                className={`lightbomb-character-card ${selectedCharacter === character.id ? 'selected' : ''}`}
+                key={character.id}
+                onClick={() => startRun(character.id)}
+              >
+                <img src={character.image} alt="" />
+                <strong>{character.name}</strong>
+                <span>{character.ability}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="screen lightbomb-screen">
@@ -5217,7 +5388,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
               </span>
             ))}
             {bombs.map((bomb) => (
-              <span className={`lightbomb-bomb ${bomb.remote ? 'remote' : ''} ${bomb.kickedDir ? 'sliding' : ''}`} key={bomb.id} style={lightBombTokenStyle(bomb.x, bomb.y)} />
+              <span className={`lightbomb-bomb ${bomb.remote ? 'remote' : ''} ${bomb.piercing ? 'piercing' : ''} ${bomb.kickedDir ? 'sliding' : ''}`} key={bomb.id} style={lightBombTokenStyle(bomb.x, bomb.y)} />
             ))}
             {explosions.map((explosion) => <span className="lightbomb-explosion" key={explosion.id} style={lightBombCellStyle(explosion.row, explosion.col)} />)}
             {enemies.map((enemy) => (
@@ -5226,10 +5397,12 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
               </span>
             ))}
             <span className={`lightbomb-player dir-${player.dir} ${shielded ? 'shielded' : ''}`} style={lightBombTokenStyle(player.x, player.y)}>
-              <img src={assets.lightBombHeads.prince} alt="" />
+              <img src={assets.lightBombHeads[player.character]} alt="" />
             </span>
           </div>
           <div className="lightbomb-hud">
+            <span>{currentLevelConfig.title}</span>
+            <span>{currentCharacter.name}</span>
             <span>敵 {enemies.length}</span>
             <span>光爆 {bombs.length}/{player.maxBombs}</span>
             <span>火力 {player.range}</span>
@@ -5268,8 +5441,8 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
           </button>
           {status !== 'playing' && (
             <div className="lightbomb-result">
-              <strong>{status === 'won' ? '通路開啟' : '光爆失誤'}</strong>
-              <button onClick={restart}>{status === 'won' ? '再闖一次' : '重新挑戰'}</button>
+              <strong>{status === 'won' ? '三層通路開啟' : '光爆失誤'}</strong>
+              <button onClick={status === 'won' ? returnToSelect : restart}>{status === 'won' ? '重新選角' : '重新挑戰'}</button>
             </div>
           )}
         </div>

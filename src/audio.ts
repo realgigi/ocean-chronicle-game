@@ -2,12 +2,17 @@ let audioContext: AudioContext | null = null;
 let masterGain: GainNode | null = null;
 let bgmTimers: number[] = [];
 let padOscillators: OscillatorNode[] = [];
+let bgmProfile: BgmProfile | null = null;
+let bgmIntensity = 1;
 
 type GameSfx = 'select' | 'bomb' | 'blast' | 'powerup' | 'door' | 'hit' | 'kick';
+type BgmProfile = 'ocean' | 'lightbomb';
 
 const leadNotes = [392, 466.16, 523.25, 587.33, 523.25, 698.46, 622.25, 466.16];
 const arpeggioNotes = [293.66, 349.23, 392, 466.16, 523.25, 587.33, 523.25, 392];
 const bassNotes = [73.42, 92.5, 110, 98, 73.42, 116.54, 130.81, 110];
+const mazeLeadNotes = [523.25, 587.33, 698.46, 783.99, 698.46, 622.25, 587.33, 466.16];
+const mazeBassNotes = [65.41, 82.41, 98, 110, 82.41, 123.47, 98, 73.42];
 
 function makeContext() {
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
@@ -93,13 +98,23 @@ function startPad() {
   });
 }
 
-export async function startOceanBgm() {
-  const context = makeContext();
-  if (!context) return;
-  if (context.state === 'suspended') await context.resume();
-  startPad();
-  if (bgmTimers.length) return;
+function stopBgmPlayback(suspend: boolean) {
+  bgmTimers.forEach((timer) => window.clearInterval(timer));
+  bgmTimers = [];
+  padOscillators.forEach((oscillator) => {
+    try {
+      oscillator.stop();
+    } catch {
+      // Already stopped by the browser.
+    }
+    oscillator.disconnect();
+  });
+  padOscillators = [];
+  bgmProfile = null;
+  if (suspend) void audioContext?.suspend().catch(() => undefined);
+}
 
+function startDefaultBgm(context: AudioContext) {
   let step = 0;
   addTimer(() => {
     const now = context.currentTime;
@@ -139,6 +154,68 @@ export async function startOceanBgm() {
   }, 3360);
 }
 
+function startLightBombBgm(context: AudioContext) {
+  let beat = 0;
+  addTimer(() => {
+    const now = context.currentTime;
+    const intensity = bgmIntensity;
+    const bass = mazeBassNotes[beat % mazeBassNotes.length];
+    if (beat % 2 === 0) {
+      playTone(bass, now, 0.14, 'sawtooth', 0.09 + intensity * 0.018, -6);
+      playNoise(now, 0.035, 0.026 + intensity * 0.006, 190, 'lowpass');
+    } else {
+      playNoise(now, 0.022, 0.018 + intensity * 0.005, 3200, 'highpass');
+    }
+    if (beat % 4 === 3) playTone(bass * 2, now + 0.025, 0.07, 'triangle', 0.028 + intensity * 0.005);
+    if (intensity > 1.2 && beat % 8 === 5) playNoise(now, 0.08, 0.018, 1200, 'bandpass');
+    beat += 1;
+  }, 155);
+
+  let pulse = 0;
+  addTimer(() => {
+    const now = context.currentTime;
+    const intensity = bgmIntensity;
+    const note = mazeLeadNotes[pulse % mazeLeadNotes.length];
+    playTone(note, now, 0.08, 'square', 0.018 + intensity * 0.006, pulse % 2 ? 7 : -7);
+    playTone(note * 1.5, now + 0.048, 0.07, 'triangle', 0.012 + intensity * 0.004);
+    if (pulse % 4 === 0) playTone(note * 0.5, now, 0.18, 'sine', 0.018);
+    pulse += 1;
+  }, 310);
+
+  let lead = 0;
+  addTimer(() => {
+    const now = context.currentTime;
+    const intensity = bgmIntensity;
+    const note = mazeLeadNotes[(lead * 2 + Math.floor(intensity)) % mazeLeadNotes.length];
+    playTone(note, now, 0.24, 'triangle', 0.045 + intensity * 0.006);
+    playTone(note * 2, now + 0.09, 0.12, 'sine', 0.018 + intensity * 0.004);
+    lead += 1;
+  }, 1240);
+
+  addTimer(() => {
+    const now = context.currentTime;
+    playNoise(now, 0.34, 0.02 + bgmIntensity * 0.006, 4200, 'bandpass');
+    playTone(1046.5, now + 0.04, 0.2, 'triangle', 0.016 + bgmIntensity * 0.004);
+  }, 2480);
+}
+
+export function setOceanBgmIntensity(intensity: number) {
+  bgmIntensity = Math.max(0.8, Math.min(1.8, intensity));
+}
+
+export async function startOceanBgm(profile: BgmProfile = 'ocean', intensity = 1) {
+  const context = makeContext();
+  if (!context) return;
+  if (context.state === 'suspended') await context.resume();
+  setOceanBgmIntensity(intensity);
+  if (bgmTimers.length && bgmProfile !== profile) stopBgmPlayback(false);
+  startPad();
+  if (bgmTimers.length) return;
+  bgmProfile = profile;
+  if (profile === 'lightbomb') startLightBombBgm(context);
+  else startDefaultBgm(context);
+}
+
 export function playGameSfx(kind: GameSfx) {
   const context = makeContext();
   if (!context) return;
@@ -169,18 +246,7 @@ export function playGameSfx(kind: GameSfx) {
 }
 
 export function stopOceanBgm() {
-  bgmTimers.forEach((timer) => window.clearInterval(timer));
-  bgmTimers = [];
-  padOscillators.forEach((oscillator) => {
-    try {
-      oscillator.stop();
-    } catch {
-      // Already stopped by the browser.
-    }
-    oscillator.disconnect();
-  });
-  padOscillators = [];
-  void audioContext?.suspend().catch(() => undefined);
+  stopBgmPlayback(true);
 }
 
 declare global {
