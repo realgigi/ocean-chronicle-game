@@ -125,6 +125,17 @@ type SnakeCell = {
 
 type SnakeDirection = 'up' | 'down' | 'left' | 'right';
 
+type SnakeDecorKind = 'reef' | 'ruin' | 'kelp' | 'vent' | 'shell' | 'current' | 'glow';
+type SnakeDecoration = {
+  id: number;
+  kind: SnakeDecorKind;
+  row: number;
+  col: number;
+  width: number;
+  height: number;
+  rotate?: number;
+};
+
 type SnakeObstacle = SnakeCell & {
   id: number;
   expiresAt: number;
@@ -696,6 +707,24 @@ const snakeStart: SnakeCell[] = [
   { col: 12, row: 27 },
   { col: 12, row: 28 },
   { col: 12, row: 29 },
+];
+const snakeDecorations: SnakeDecoration[] = [
+  { id: 1, kind: 'reef', row: 2, col: 1, width: 6, height: 4, rotate: -8 },
+  { id: 2, kind: 'current', row: 1, col: 9, width: 13, height: 3, rotate: 8 },
+  { id: 3, kind: 'ruin', row: 5, col: 15, width: 6, height: 5, rotate: 3 },
+  { id: 4, kind: 'kelp', row: 8, col: 2, width: 5, height: 7, rotate: -5 },
+  { id: 5, kind: 'shell', row: 12, col: 11, width: 4, height: 3, rotate: 14 },
+  { id: 6, kind: 'vent', row: 15, col: 18, width: 4, height: 4 },
+  { id: 7, kind: 'glow', row: 18, col: 4, width: 5, height: 5 },
+  { id: 8, kind: 'reef', row: 21, col: 15, width: 7, height: 5, rotate: 9 },
+  { id: 9, kind: 'current', row: 25, col: 0, width: 11, height: 4, rotate: -11 },
+  { id: 10, kind: 'ruin', row: 29, col: 5, width: 7, height: 5, rotate: -4 },
+  { id: 11, kind: 'kelp', row: 30, col: 17, width: 5, height: 6, rotate: 7 },
+  { id: 12, kind: 'shell', row: 33, col: 13, width: 4, height: 2, rotate: -16 },
+  { id: 13, kind: 'glow', row: 9, col: 19, width: 4, height: 4 },
+  { id: 14, kind: 'vent', row: 23, col: 8, width: 3, height: 3 },
+  { id: 15, kind: 'reef', row: 14, col: 0, width: 4, height: 4, rotate: 18 },
+  { id: 16, kind: 'current', row: 17, col: 10, width: 12, height: 3, rotate: 12 },
 ];
 const towerGoalMs = 180000;
 const towerDeathPenaltyMs = 15000;
@@ -2922,6 +2951,17 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
       }) as CSSProperties,
     [snakeCellPx],
   );
+  const snakeDecorationStyle = useCallback(
+    (decor: SnakeDecoration) =>
+      ({
+        left: `${decor.col * snakeCellPx}px`,
+        top: `${decor.row * snakeCellPx}px`,
+        width: `${decor.width * snakeCellPx}px`,
+        height: `${decor.height * snakeCellPx}px`,
+        ['--decor-rotate' as string]: `${decor.rotate ?? 0}deg`,
+      }) as CSSProperties,
+    [snakeCellPx],
+  );
 
   useEffect(() => {
     const board = snakeBoardRef.current;
@@ -3225,6 +3265,9 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
           }}
         >
           <div className="snake-world" style={snakeWorldStyle}>
+            {snakeDecorations.map((decor) => (
+              <span className={`snake-decor ${decor.kind}`} key={decor.id} style={snakeDecorationStyle(decor)} />
+            ))}
             <span className="snake-food" style={snakePositionStyle(food)} />
             {snake.map((cell, index) =>
               index === 0 ? (
