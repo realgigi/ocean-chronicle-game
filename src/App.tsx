@@ -737,7 +737,7 @@ const cityViewRows = 15;
 const cityViewWidth = cityCellSize * cityViewCols;
 const cityViewHeight = cityCellSize * cityViewRows;
 const cityUnitSize = cityCellSize * 0.74;
-const cityUnitVisualSize = cityCellSize * 1.16;
+const cityUnitVisualSize = cityCellSize * 1.02;
 const cityPlayerStepDelayMs = 240;
 const cityStartingBaseHp = 4;
 const cityStartingArmor = 4;
@@ -4332,12 +4332,12 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             ))}
             {visualEnemies.map((enemy) => (
               <div className={`city-unit enemy dir-${enemy.dir} ${citySeaweedCover(enemy.x, enemy.y, tiles) ? 'hidden' : ''} ${enemiesFrozen ? 'frozen' : ''}`} key={enemy.id} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }}>
-                <img src={assets.lightBombHeads.squid} alt="" />
+                <img src={assets.cityUnits.enemy[enemy.dir]} alt="" />
                 <i style={{ width: `${enemy.hp * 50}%` }} />
               </div>
             ))}
             <div className={`city-unit player dir-${visualPlayer.dir} ${playerHidden ? 'hidden' : ''} ${shielded ? 'shielded' : ''} ${rapid ? 'rapid' : ''} ${piercing ? 'piercing' : ''}`} style={{ left: `${visualPlayer.x}%`, top: `${visualPlayer.y}%` }}>
-              <img src={assets.lightBombHeads.prince} alt="" />
+              <img src={assets.cityUnits.player[visualPlayer.dir]} alt="" />
             </div>
             {shots.map((shot) => (
               <span className={`city-shot ${shot.side} dir-${shot.dir} ${shot.piercing ? 'piercing' : ''}`} key={shot.id} style={{ left: `${shot.x}%`, top: `${shot.y}%` }} />
