@@ -1,6 +1,6 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, Gem, Play, RotateCcw, Search, Sparkles, Swords, Zap } from 'lucide-react';
-import { startOceanBgm, stopOceanBgm } from './audio';
+import { playGameSfx, startOceanBgm, stopOceanBgm } from './audio';
 
 function assetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
@@ -51,7 +51,7 @@ type VideoLeadInConfig = {
   title: string;
   src: string;
   actionLabel: string;
-  destination: 'map' | 'combat' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city';
+  destination: 'map' | 'combat' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city' | 'lightbomb';
 };
 
 type MemoryCardDef = {
@@ -295,6 +295,10 @@ type LightBombNotice = {
   kind: LightBombPowerupKind | 'door' | 'hit';
   text: string;
 } | null;
+type LightBombPadIntent = {
+  primary: CityDirection;
+  secondary?: CityDirection;
+} | null;
 type BreakoutPowerupKind = 'split2' | 'gun' | 'split5' | 'giant' | 'grow' | 'wide' | 'narrow';
 
 type BreakoutPowerup = {
@@ -323,6 +327,12 @@ const assets = {
   napoleonWrasseHost: assetUrl('/assets/mobile/hosts/napoleon-wrasse-warrior-setting-cutout-v01.png?v=20260529'),
   morayHost: assetUrl('/assets/mobile/hosts/moray-strategist-setting-cutout-v01.png?v=20260529'),
   princeIcon: assetUrl('/assets/mobile/icons/prince-clownfish-circle-v01.png?v=20260529'),
+  lightBombHeads: {
+    prince: assetUrl('/assets/mobile/lightbomb/prince-head-v01.png?v=20260601'),
+    squid: assetUrl('/assets/mobile/lightbomb/squid-head-v01.png?v=20260601'),
+    urchin: assetUrl('/assets/mobile/lightbomb/urchin-head-v01.png?v=20260601'),
+    anemone: assetUrl('/assets/mobile/lightbomb/anemone-head-v01.png?v=20260601'),
+  } satisfies Record<'prince' | LightBombEnemyKind, string>,
   mechaSquid: {
     up: assetUrl('/assets/mobile/enemies/mecha-squid-up-cutout.webp?v=20260530b'),
     down: assetUrl('/assets/mobile/enemies/mecha-squid-down-cutout.webp?v=20260530b'),
@@ -423,6 +433,13 @@ const videoLeadIns = {
     src: assetUrl('/assets/mobile/videos/undersea-city-intro.mp4?v=20260530'),
     actionLabel: '進入城市',
     destination: 'city',
+  },
+  lightBombMaze: {
+    eyebrow: '海光迷宮片頭',
+    title: '公子王子的海光迷宮',
+    src: assetUrl('/assets/mobile/videos/lightbomb-maze-intro.mp4?v=20260601'),
+    actionLabel: '進入迷宮',
+    destination: 'lightbomb',
   },
 } satisfies Record<string, VideoLeadInConfig>;
 
@@ -727,8 +744,8 @@ const cityPowerupMessages: Record<CityPowerupKind, string> = {
 };
 const lightBombRows = 31;
 const lightBombCols = 31;
-const lightBombViewRows = 25;
-const lightBombViewCols = 15;
+const lightBombViewRows = 17;
+const lightBombViewCols = 10;
 const lightBombKickStepMs = 82;
 const lightBombPlayerStart: LightBombPlayer = {
   row: 1,
@@ -1597,6 +1614,11 @@ export default function App() {
       setScreen('city');
       return;
     }
+    if (videoLeadIn.destination === 'lightbomb') {
+      void startOceanBgm();
+      setScreen('lightbomb');
+      return;
+    }
     void startOceanBgm();
     setScreen('memory');
   };
@@ -1617,10 +1639,7 @@ export default function App() {
             onSnake={() => openVideoLeadIn(videoLeadIns.tideTribe)}
             onTower={() => openVideoLeadIn(videoLeadIns.abyssTower)}
             onCity={() => openVideoLeadIn(videoLeadIns.underseaCity)}
-            onLightBomb={() => {
-              void startOceanBgm();
-              setScreen('lightbomb');
-            }}
+            onLightBomb={() => openVideoLeadIn(videoLeadIns.lightBombMaze)}
           />
         )}
         {screen === 'gallery' && <CharacterGallery onBack={showTitle} />}
@@ -4233,7 +4252,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
   const exitRef = useRef<LightBombExit>(firstLevel.exit);
   const exitRevealedRef = useRef(false);
   const statusRef = useRef<LightBombStatus>('playing');
-  const heldDirectionRef = useRef<CityDirection | null>(null);
+  const heldDirectionRef = useRef<LightBombPadIntent>(null);
   const movePointerRef = useRef<number | null>(null);
   const remoteTriggerRef = useRef<number | null>(null);
   const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
@@ -4316,6 +4335,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     const nextCol = bomb.col + vector.x;
     if (!canEnterCell(nextRow, nextCol, bombs.filter((item) => item.id !== bomb.id), enemies)) return bombs;
     showNotice('kick', '滑行');
+    playGameSfx('kick');
     return bombs.map((item) => (
       item.id === bomb.id
         ? { ...item, row: nextRow, col: nextCol, x: bomb.col, y: bomb.row, kickedDir: direction, moveAt: performance.now() + lightBombKickStepMs }
@@ -4327,7 +4347,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     const player = { ...playerRef.current, dir: direction };
     if (Math.abs(player.x - player.col) + Math.abs(player.y - player.row) > 0.08) {
       playerRef.current = player;
-      return;
+      return false;
     }
     const vector = cityDirectionVector(direction);
     const nextRow = player.row + vector.y;
@@ -4339,14 +4359,17 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
       setBombs(nextBombs);
       if (nextBombs.some((bomb) => bomb.row === nextRow && bomb.col === nextCol)) {
         playerRef.current = player;
-        return;
+        return false;
       }
     }
     if (canEnterCell(nextRow, nextCol, bombsRef.current, enemiesRef.current)) {
       player.row = nextRow;
       player.col = nextCol;
+      playerRef.current = player;
+      return true;
     }
     playerRef.current = player;
+    return false;
   }, [canEnterCell, tryKickBomb]);
 
   const placeOrTriggerBomb = useCallback(() => {
@@ -4356,6 +4379,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     const remoteBomb = bombsRef.current.find((bomb) => bomb.remote);
     if (remoteBomb && player.remoteUntil > now && bombsRef.current.length >= player.maxBombs) {
       remoteTriggerRef.current = remoteBomb.id;
+      playGameSfx('select');
       return;
     }
     if (bombsRef.current.length >= player.maxBombs || bombsRef.current.some((bomb) => bomb.row === player.row && bomb.col === player.col)) return;
@@ -4373,27 +4397,41 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     };
     bombsRef.current = [...bombsRef.current, nextBomb];
     setBombs(bombsRef.current);
+    playGameSfx('bomb');
   }, []);
 
-  const directionFromPad = useCallback((clientX: number, clientY: number, target: HTMLElement): CityDirection | null => {
+  const intentFromPad = useCallback((clientX: number, clientY: number, target: HTMLElement): LightBombPadIntent => {
     const rect = target.getBoundingClientRect();
     const dx = clientX - (rect.left + rect.width / 2);
     const dy = clientY - (rect.top + rect.height / 2);
     if (Math.hypot(dx, dy) < Math.min(rect.width, rect.height) * 0.16) return null;
-    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
-    return dy > 0 ? 'down' : 'up';
+    const horizontal: CityDirection = dx > 0 ? 'right' : 'left';
+    const vertical: CityDirection = dy > 0 ? 'down' : 'up';
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (absX > absY * 1.8) return { primary: horizontal };
+    if (absY > absX * 1.8) return { primary: vertical };
+    return absX >= absY
+      ? { primary: horizontal, secondary: vertical }
+      : { primary: vertical, secondary: horizontal };
   }, []);
 
-  const holdDirection = useCallback((direction: CityDirection | null) => {
-    heldDirectionRef.current = direction;
-    setPadDirection(direction);
-    if (direction) tryMovePlayer(direction);
+  const tryMoveIntent = useCallback((intent: LightBombPadIntent) => {
+    if (!intent) return;
+    if (tryMovePlayer(intent.primary)) return;
+    if (intent.secondary) tryMovePlayer(intent.secondary);
   }, [tryMovePlayer]);
+
+  const holdDirection = useCallback((intent: LightBombPadIntent) => {
+    heldDirectionRef.current = intent;
+    setPadDirection(intent?.primary ?? null);
+    tryMoveIntent(intent);
+  }, [tryMoveIntent]);
 
   const updatePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
-    holdDirection(directionFromPad(event.clientX, event.clientY, event.currentTarget));
-  }, [directionFromPad, holdDirection]);
+    holdDirection(intentFromPad(event.clientX, event.clientY, event.currentTarget));
+  }, [intentFromPad, holdDirection]);
 
   const releasePad = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
     if (event && movePointerRef.current !== null && movePointerRef.current !== event.pointerId) return;
@@ -4406,7 +4444,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
       const key = event.key.toLowerCase();
       const direction = event.key === 'ArrowUp' || key === 'w' ? 'up' : event.key === 'ArrowDown' || key === 's' ? 'down' : event.key === 'ArrowLeft' || key === 'a' ? 'left' : event.key === 'ArrowRight' || key === 'd' ? 'right' : null;
       if (direction) {
-        holdDirection(direction);
+        holdDirection({ primary: direction });
         event.preventDefault();
       }
       if (event.key === ' ' || key === 'j' || key === 'k') {
@@ -4417,7 +4455,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     const onKeyUp = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
       const direction = event.key === 'ArrowUp' || key === 'w' ? 'up' : event.key === 'ArrowDown' || key === 's' ? 'down' : event.key === 'ArrowLeft' || key === 'a' ? 'left' : event.key === 'ArrowRight' || key === 'd' ? 'right' : null;
-      if (direction && heldDirectionRef.current === direction) holdDirection(null);
+      if (direction && heldDirectionRef.current?.primary === direction) holdDirection(null);
     };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
@@ -4435,7 +4473,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
 
       if (statusRef.current === 'playing') {
         const held = heldDirectionRef.current;
-        if (held) tryMovePlayer(held);
+        if (held) tryMoveIntent(held);
 
         let currentPlayer = { ...playerRef.current };
         currentPlayer.x = lightBombVisualStep(currentPlayer.x, currentPlayer.col, dt, currentPlayer.moveMs);
@@ -4460,6 +4498,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
           }
           if (exitRef.current.row === row && exitRef.current.col === col) {
             exitRevealed = true;
+            playGameSfx('door');
             showNotice('door', '門印浮現');
           }
         };
@@ -4467,6 +4506,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
         const explodeBomb = (bombId: number) => {
           const bomb = nextBombs.find((item) => item.id === bombId);
           if (!bomb) return;
+          playGameSfx('blast');
           nextBombs = nextBombs.filter((item) => item.id !== bomb.id);
           const cells = [{ row: bomb.row, col: bomb.col }];
           lightBombDirections.forEach((direction) => {
@@ -4557,6 +4597,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
           if (powerup.kind === 'kick') player.kick = true;
           if (powerup.kind === 'remote') player.remoteUntil = time + 20000;
           if (powerup.kind === 'shield') player.shieldUntil = time + 7000;
+          playGameSfx('powerup');
           showNotice(powerup.kind, lightBombPowerupText[powerup.kind]);
           currentPlayer = player;
           return false;
@@ -4566,14 +4607,19 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
         if (!protectedByShield && (explosionHits(currentPlayer.row, currentPlayer.col) || nextEnemies.some((enemy) => lightBombCellsEqual(enemy, currentPlayer)))) {
           statusRef.current = 'lost';
           setStatus('lost');
+          playGameSfx('hit');
           showNotice('hit', '再挑戰');
         }
 
         const visibleExit = exitRevealed && nextEnemies.length === 0;
-        if (visibleExit && !wasExitVisible) showNotice('door', '出口開啟');
+        if (visibleExit && !wasExitVisible) {
+          playGameSfx('door');
+          showNotice('door', '出口開啟');
+        }
         if (visibleExit && lightBombCellsEqual(currentPlayer, exitRef.current)) {
           statusRef.current = 'won';
           setStatus('won');
+          playGameSfx('door');
           showNotice('door', '通路開啟');
         }
 
@@ -4601,7 +4647,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [canEnterCell, showNotice, tryMovePlayer]);
+  }, [canEnterCell, showNotice, tryMoveIntent]);
 
   const cellPx = Math.max(17, Math.min((arenaSize.width || 360) / lightBombViewCols, (arenaSize.height || 520) / lightBombViewRows));
   const worldPx = cellPx * lightBombCols;
@@ -4648,11 +4694,11 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
             {explosions.map((explosion) => <span className="lightbomb-explosion" key={explosion.id} style={lightBombCellStyle(explosion.row, explosion.col)} />)}
             {enemies.map((enemy) => (
               <span className={`lightbomb-enemy ${enemy.kind} dir-${enemy.dir}`} key={enemy.id} style={lightBombTokenStyle(enemy.x, enemy.y)}>
-                <img src={enemy.kind === 'squid' ? assets.mechaSquid[enemy.dir] : enemy.kind === 'urchin' ? assets.virusUrchin : assets.garbageAnemone} alt="" />
+                <img src={assets.lightBombHeads[enemy.kind]} alt="" />
               </span>
             ))}
             <span className={`lightbomb-player dir-${player.dir} ${shielded ? 'shielded' : ''}`} style={lightBombTokenStyle(player.x, player.y)}>
-              <img src={assets.princeIcon} alt="" />
+              <img src={assets.lightBombHeads.prince} alt="" />
             </span>
           </div>
           <div className="lightbomb-hud">
