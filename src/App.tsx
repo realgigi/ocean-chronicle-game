@@ -738,8 +738,8 @@ const cityViewWidth = cityCellSize * cityViewCols;
 const cityViewHeight = cityCellSize * cityViewRows;
 const cityUnitSize = cityCellSize * 0.74;
 const cityUnitVisualSize = cityCellSize * 1.02;
-const cityPlayerStepDelayMs = 150;
-const cityPlayerMoveMs = 205;
+const cityPlayerStepDelayMs = 170;
+const cityPlayerMoveMs = 170;
 const cityStartingBaseHp = 4;
 const cityStartingArmor = 4;
 const cityMaxHp = 5;
@@ -1188,11 +1188,26 @@ function cityVisualStep(value: number, target: number, dt: number) {
 }
 
 function citySmoothVisual<T extends { x: number; y: number }>(previous: T | undefined, target: T, dt: number): T {
-  if (!previous || Math.hypot(target.x - previous.x, target.y - previous.y) > cityCellSize * 2.2) return target;
+  if (!previous || Math.hypot(target.x - previous.x, target.y - previous.y) > cityCellSize * 6) return target;
   return {
     ...target,
     x: cityVisualStep(previous.x, target.x, dt),
     y: cityVisualStep(previous.y, target.y, dt),
+  };
+}
+
+function cityCameraForPosition(x: number, y: number) {
+  return {
+    x: clamp(x - cityViewWidth / 2, 0, 100 - cityViewWidth),
+    y: clamp(y - cityViewHeight / 2, 0, 100 - cityViewHeight),
+  };
+}
+
+function citySmoothCamera(previous: { x: number; y: number }, target: { x: number; y: number }, dt: number) {
+  const maxDelta = (cityCellSize * dt) / 115;
+  return {
+    x: cityApproach(previous.x, target.x, maxDelta),
+    y: cityApproach(previous.y, target.y, maxDelta),
   };
 }
 
@@ -1343,6 +1358,34 @@ function wrapSnakeCell(cell: SnakeCell): SnakeCell {
   return {
     row: (cell.row + snakeRows) % snakeRows,
     col: (cell.col + snakeCols) % snakeCols,
+  };
+}
+
+function snakeCenteredCamera(cell: SnakeCell) {
+  return {
+    col: clamp(cell.col + 0.5 - snakeViewCols / 2, 0, snakeCols - snakeViewCols),
+    row: clamp(cell.row + 0.5 - snakeViewRows / 2, 0, snakeRows - snakeViewRows),
+  };
+}
+
+function snakeCameraWithDeadZone(previous: { col: number; row: number }, head: SnakeCell) {
+  const headCol = head.col + 0.5;
+  const headRow = head.row + 0.5;
+  let col = previous.col;
+  let row = previous.row;
+  const minVisibleCol = col + snakeViewCols * 0.35;
+  const maxVisibleCol = col + snakeViewCols * 0.65;
+  const minVisibleRow = row + snakeViewRows * 0.36;
+  const maxVisibleRow = row + snakeViewRows * 0.64;
+
+  if (headCol < minVisibleCol) col = headCol - snakeViewCols * 0.35;
+  if (headCol > maxVisibleCol) col = headCol - snakeViewCols * 0.65;
+  if (headRow < minVisibleRow) row = headRow - snakeViewRows * 0.36;
+  if (headRow > maxVisibleRow) row = headRow - snakeViewRows * 0.64;
+
+  return {
+    col: clamp(col, 0, snakeCols - snakeViewCols),
+    row: clamp(row, 0, snakeRows - snakeViewRows),
   };
 }
 
@@ -2924,6 +2967,7 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
   const movePointerRef = useRef<number | null>(null);
   const directionRef = useRef<SnakeDirection>('up');
   const snakeRef = useRef<SnakeCell[]>(snakeStart);
+  const snakeCameraRef = useRef(snakeCenteredCamera(snakeStart[0]));
   const foodRef = useRef<SnakeCell>(placeSnakeFood(snakeStart, []));
   const obstaclesRef = useRef<SnakeObstacle[]>([]);
   const powerupRef = useRef<SnakePowerup | null>(null);
@@ -2935,6 +2979,7 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
   const wrapEffectTimer = useRef<number | null>(null);
   const [direction, setDirection] = useState<SnakeDirection>('up');
   const [snake, setSnake] = useState<SnakeCell[]>(snakeStart);
+  const [snakeCamera, setSnakeCamera] = useState(() => snakeCenteredCamera(snakeStart[0]));
   const [food, setFood] = useState<SnakeCell>(() => placeSnakeFood(snakeStart, []));
   const [obstacles, setObstacles] = useState<SnakeObstacle[]>([]);
   const [powerup, setPowerup] = useState<SnakePowerup | null>(null);
@@ -2953,11 +2998,6 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
   const snakeViewportHeightPx = snakeCellPx * snakeViewRows;
   const snakeWorldWidthPx = snakeCellPx * snakeCols;
   const snakeWorldHeightPx = snakeCellPx * snakeRows;
-  const snakeFacing = cityDirectionVector(direction);
-  const snakeCamera = {
-    col: clamp(snake[0].col + 0.5 + snakeFacing.x * 1.45 - snakeViewCols / 2, 0, snakeCols - snakeViewCols),
-    row: clamp(snake[0].row + 0.5 + snakeFacing.y * 2.1 - snakeViewRows / 2, 0, snakeRows - snakeViewRows),
-  };
   const snakePositionStyle = useCallback(
     (cell: SnakeCell, extra?: CSSProperties) =>
       ({
@@ -3041,16 +3081,19 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
 
   const resetRound = useCallback((nextLives: number) => {
     if (wrapEffectTimer.current) window.clearTimeout(wrapEffectTimer.current);
+    const nextCamera = snakeCenteredCamera(snakeStart[0]);
     wrapEffectTimer.current = null;
     directionRef.current = 'up';
     obstaclesRef.current = [];
     powerupRef.current = null;
     invincibleUntilRef.current = 0;
     snakeRef.current = snakeStart;
+    snakeCameraRef.current = nextCamera;
     const nextFood = placeSnakeFood(snakeStart, []);
     foodRef.current = nextFood;
     setDirection('up');
     setSnake(snakeStart);
+    setSnakeCamera(nextCamera);
     setFood(nextFood);
     setObstacles([]);
     setPowerup(null);
@@ -3122,6 +3165,9 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
         loseLife();
         return;
       }
+      const nextSnakeCamera = didWrap ? snakeCenteredCamera(head) : snakeCameraWithDeadZone(snakeCameraRef.current, head);
+      snakeCameraRef.current = nextSnakeCamera;
+      setSnakeCamera(nextSnakeCamera);
       const materialBonus = hitObstacle && isInvincible ? 2 : 0;
       if (materialBonus > 0) {
         const clearedObstacles = activeObstacles.filter((obstacle) => !sameCell(obstacle, head));
@@ -3251,7 +3297,7 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
   const snakeWorldStyle: CSSProperties = {
     width: `${snakeWorldWidthPx}px`,
     height: `${snakeWorldHeightPx}px`,
-    transform: `translate(${-snakeCamera.col * snakeCellPx}px, ${-snakeCamera.row * snakeCellPx}px)`,
+    transform: `translate3d(${-snakeCamera.col * snakeCellPx}px, ${-snakeCamera.row * snakeCellPx}px, 0)`,
   };
   const snakePadStickStyle: CSSProperties = {
     ['--pad-x' as string]: `${padVector.x}px`,
@@ -3767,6 +3813,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const noticeId = useRef(0);
   const playerRef = useRef({ ...cityPlayerStart, cooldown: 0 });
   const visualPlayerRef = useRef({ ...cityPlayerStart });
+  const cameraRef = useRef(cityCameraForPosition(cityPlayerStart.x, cityPlayerStart.y));
   const tilesRef = useRef<CityTile[]>(startingTiles);
   const enemiesRef = useRef<CityUnit[]>([]);
   const visualEnemiesRef = useRef<CityUnit[]>([]);
@@ -3782,6 +3829,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const [tiles, setTiles] = useState<CityTile[]>(startingTiles);
   const [visualPlayer, setVisualPlayer] = useState({ ...cityPlayerStart });
   const [visualEnemies, setVisualEnemies] = useState<CityUnit[]>([]);
+  const [camera, setCamera] = useState(() => cityCameraForPosition(cityPlayerStart.x, cityPlayerStart.y));
   const [shots, setShots] = useState<CityShot[]>([]);
   const [powerups, setPowerups] = useState<CityPowerup[]>([]);
   const [baseHp, setBaseHp] = useState(cityStartingBaseHp);
@@ -3811,8 +3859,10 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
 
   const restart = useCallback(() => {
     const nextTiles = createCityTiles();
+    const nextCamera = cityCameraForPosition(cityPlayerStart.x, cityPlayerStart.y);
     playerRef.current = { ...cityPlayerStart, cooldown: 0 };
     visualPlayerRef.current = { ...cityPlayerStart };
+    cameraRef.current = nextCamera;
     tilesRef.current = nextTiles;
     enemiesRef.current = [];
     visualEnemiesRef.current = [];
@@ -3837,6 +3887,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     setTiles(nextTiles);
     setVisualPlayer({ ...cityPlayerStart });
     setVisualEnemies([]);
+    setCamera(nextCamera);
     setShots([]);
     setPowerups([]);
     setBaseHp(cityStartingBaseHp);
@@ -4244,11 +4295,14 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
           setTiles(nextTiles);
         }
         const nextVisualPlayer = citySmoothVisual(visualPlayerRef.current, { x: currentPlayer.x, y: currentPlayer.y, dir: currentPlayer.dir }, dt);
+        const nextCamera = citySmoothCamera(cameraRef.current, cityCameraForPosition(nextVisualPlayer.x, nextVisualPlayer.y), dt);
         const visualEnemyLookup = new Map(visualEnemiesRef.current.map((enemy) => [enemy.id, enemy]));
         const nextVisualEnemies = nextEnemies.map((enemy) => citySmoothVisual(visualEnemyLookup.get(enemy.id), enemy, dt));
         visualPlayerRef.current = nextVisualPlayer;
+        cameraRef.current = nextCamera;
         visualEnemiesRef.current = nextVisualEnemies;
         setVisualPlayer(nextVisualPlayer);
+        setCamera(nextCamera);
         setVisualEnemies(nextVisualEnemies);
         setShots(shotsRef.current);
         setPowerups(nextPowerups);
@@ -4279,10 +4333,6 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const cityViewportWidthPx = cityCellPx * cityViewCols;
   const cityViewportHeightPx = cityCellPx * cityViewRows;
   const cityWorldPx = cityCellPx * cityGridSize;
-  const camera = {
-    x: clamp(visualPlayer.x - cityViewWidth / 2, 0, 100 - cityViewWidth),
-    y: clamp(visualPlayer.y - cityViewHeight / 2, 0, 100 - cityViewHeight),
-  };
   const viewportStyle: CSSProperties = {
     width: `${cityViewportWidthPx}px`,
     height: `${cityViewportHeightPx}px`,
@@ -4291,7 +4341,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const worldTransform: CSSProperties = {
     width: `${cityWorldPx}px`,
     height: `${cityWorldPx}px`,
-    transform: `translate(${-(camera.x / cityCellSize) * cityCellPx}px, ${-(camera.y / cityCellSize) * cityCellPx}px)`,
+    transform: `translate3d(${-(camera.x / cityCellSize) * cityCellPx}px, ${-(camera.y / cityCellSize) * cityCellPx}px, 0)`,
     ['--city-unit-size' as string]: `${cityUnitVisualSize}%`,
     ['--city-shot-size' as string]: `${cityCellSize * 0.34}%`,
     ['--city-powerup-size' as string]: `${cityCellSize * 1.12}%`,
