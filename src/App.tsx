@@ -3758,6 +3758,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const powerupsRef = useRef<CityPowerup[]>([]);
   const keysRef = useRef({ fire: false });
   const heldDirectionRef = useRef<DirectionPadIntent>(null);
+  const diagonalAxisRef = useRef<'horizontal' | 'vertical'>('horizontal');
   const nextPlayerStepAt = useRef(0);
   const movePointerRef = useRef<number | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -3803,6 +3804,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     powerupsRef.current = [];
     keysRef.current = { fire: false };
     heldDirectionRef.current = null;
+    diagonalAxisRef.current = 'horizontal';
     movePointerRef.current = null;
     nextPlayerStepAt.current = 0;
     spawnTimer.current = 0;
@@ -3862,8 +3864,20 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
 
   const movePlayerIntent = useCallback((intent: DirectionPadIntent) => {
     if (!intent) return;
+    if (intent.secondary) {
+      const directions = [intent.primary, intent.secondary];
+      const horizontal = directions.find((direction) => direction === 'left' || direction === 'right');
+      const vertical = directions.find((direction) => direction === 'up' || direction === 'down');
+      const ordered = diagonalAxisRef.current === 'horizontal'
+        ? [horizontal, vertical]
+        : [vertical, horizontal];
+      const moved = ordered.some((direction) => direction ? movePlayerStep(direction) : false);
+      if (moved) {
+        diagonalAxisRef.current = diagonalAxisRef.current === 'horizontal' ? 'vertical' : 'horizontal';
+      }
+      return;
+    }
     if (movePlayerStep(intent.primary)) return;
-    if (intent.secondary) movePlayerStep(intent.secondary);
   }, [movePlayerStep]);
 
   const holdPlayerDirection = useCallback((intent: DirectionPadIntent, vector: DirectionPadVector = { x: 0, y: 0 }, startTime = performance.now()) => {
@@ -3872,7 +3886,13 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     heldDirectionRef.current = intent;
     setPadDirection(intent?.primary ?? null);
     setPadVector(intent ? vector : { x: 0, y: 0 });
-    if (!intent) return;
+    if (!intent) {
+      diagonalAxisRef.current = 'horizontal';
+      return;
+    }
+    if (intent.secondary && !sameIntent) {
+      diagonalAxisRef.current = 'horizontal';
+    }
     if (!wasHolding) {
       movePlayerIntent(intent);
       nextPlayerStepAt.current = startTime + cityPlayerStepDelayMs;
@@ -4312,12 +4332,12 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             ))}
             {visualEnemies.map((enemy) => (
               <div className={`city-unit enemy dir-${enemy.dir} ${citySeaweedCover(enemy.x, enemy.y, tiles) ? 'hidden' : ''} ${enemiesFrozen ? 'frozen' : ''}`} key={enemy.id} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }}>
-                <img src={assets.cityUnits.enemy[enemy.dir]} alt="" />
+                <img src={assets.lightBombHeads.squid} alt="" />
                 <i style={{ width: `${enemy.hp * 50}%` }} />
               </div>
             ))}
             <div className={`city-unit player dir-${visualPlayer.dir} ${playerHidden ? 'hidden' : ''} ${shielded ? 'shielded' : ''} ${rapid ? 'rapid' : ''} ${piercing ? 'piercing' : ''}`} style={{ left: `${visualPlayer.x}%`, top: `${visualPlayer.y}%` }}>
-              <img src={assets.cityUnits.player[visualPlayer.dir]} alt="" />
+              <img src={assets.lightBombHeads.prince} alt="" />
             </div>
             {shots.map((shot) => (
               <span className={`city-shot ${shot.side} dir-${shot.dir} ${shot.piercing ? 'piercing' : ''}`} key={shot.id} style={{ left: `${shot.x}%`, top: `${shot.y}%` }} />

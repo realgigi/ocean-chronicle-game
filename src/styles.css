@@ -1713,7 +1713,7 @@ button:disabled {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: 11;
+  z-index: 0;
   background:
     linear-gradient(180deg, transparent, rgba(6, 18, 26, 0.2)),
     repeating-linear-gradient(118deg, transparent 0 42px, rgba(113, 238, 214, 0.08) 43px 46px, transparent 47px 86px),
@@ -1726,6 +1726,7 @@ button:disabled {
 
 .snake-world {
   position: absolute;
+  z-index: 1;
   left: 0;
   top: 0;
   will-change: transform;
@@ -1743,6 +1744,7 @@ button:disabled {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 0;
   background-image:
     linear-gradient(rgba(204, 255, 239, 0.08) 1px, transparent 1px),
     linear-gradient(90deg, rgba(204, 255, 239, 0.08) 1px, transparent 1px);
@@ -1902,7 +1904,7 @@ button:disabled {
 
 .snake-head {
   --snake-rotate: 0deg;
-  z-index: 7;
+  z-index: 24;
   width: calc(var(--snake-cell-px) * 1.3);
   height: calc(var(--snake-cell-px) * 1.3);
   object-fit: contain;
@@ -1934,7 +1936,7 @@ button:disabled {
 }
 
 .snake-segment {
-  z-index: 4;
+  z-index: 18;
   width: calc(var(--snake-cell-px) * 0.72);
   height: calc(var(--snake-cell-px) * 0.72);
   border-radius: 50%;
@@ -1949,33 +1951,35 @@ button:disabled {
 }
 
 .snake-food {
-  z-index: 3;
-  width: calc(var(--snake-cell-px) * 0.94);
-  height: calc(var(--snake-cell-px) * 0.94);
+  z-index: 22;
+  width: calc(var(--snake-cell-px) * 1.12);
+  height: calc(var(--snake-cell-px) * 1.12);
   border-radius: 50%;
   background:
     radial-gradient(circle, #fff 0 12%, #fff4a8 13% 30%, rgba(89, 239, 205, 0.9) 31% 62%, transparent 63%);
   box-shadow:
+    0 0 0 3px rgba(4, 16, 25, 0.5),
     0 0 18px rgba(255, 228, 117, 0.76),
     0 0 28px rgba(93, 240, 210, 0.42);
   animation: snakePulse 1.1s ease-in-out infinite;
 }
 
 .snake-obstacle {
-  z-index: 6;
-  width: calc(var(--snake-cell-px) * 1.24);
-  height: calc(var(--snake-cell-px) * 1.24);
+  z-index: 23;
+  width: calc(var(--snake-cell-px) * 1.36);
+  height: calc(var(--snake-cell-px) * 1.36);
   object-fit: contain;
   filter:
+    drop-shadow(0 0 0 rgba(4, 16, 25, 0.8))
     drop-shadow(0 5px 8px rgba(0, 0, 0, 0.3))
-    drop-shadow(0 0 10px rgba(206, 244, 255, 0.36));
+    drop-shadow(0 0 12px rgba(255, 170, 232, 0.42));
   animation: snakeObstacleIn 0.24s ease-out both;
 }
 
 .snake-powerup {
-  z-index: 5;
-  width: calc(var(--snake-cell-px) * 1.08);
-  height: calc(var(--snake-cell-px) * 1.08);
+  z-index: 23;
+  width: calc(var(--snake-cell-px) * 1.18);
+  height: calc(var(--snake-cell-px) * 1.18);
   object-fit: contain;
   border-radius: 50%;
   filter:
@@ -1986,7 +1990,7 @@ button:disabled {
 
 .snake-portal {
   position: absolute;
-  z-index: 8;
+  z-index: 25;
   left: 0;
   top: 0;
   width: calc(var(--snake-cell-px) * 1.32);
@@ -2791,31 +2795,52 @@ button:disabled {
   height: var(--city-unit-size);
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  border-radius: 50%;
   pointer-events: none;
   transition: filter 120ms linear, box-shadow 120ms linear;
 }
 
+.city-unit::before {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 6%;
+  height: 28%;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(11, 27, 38, 0.88), rgba(50, 91, 104, 0.9), rgba(11, 27, 38, 0.88));
+  box-shadow:
+    inset 0 0 0 1px rgba(198, 244, 247, 0.22),
+    0 6px 10px rgba(0, 0, 0, 0.36);
+}
+
 .city-unit.player {
-  background: radial-gradient(circle, rgba(245, 255, 255, 0.74), rgba(89, 183, 205, 0.5) 58%, transparent 72%);
-  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.36));
+  background: radial-gradient(circle, rgba(245, 255, 255, 0.58), rgba(89, 183, 205, 0.28) 58%, transparent 72%);
+  filter:
+    drop-shadow(0 9px 13px rgba(0, 0, 0, 0.36))
+    drop-shadow(0 0 12px rgba(255, 228, 127, 0.28));
 }
 
 .city-unit.enemy {
-  background: radial-gradient(circle, rgba(245, 226, 255, 0.62), rgba(104, 52, 132, 0.38) 58%, transparent 72%);
-  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.34));
+  background: radial-gradient(circle, rgba(245, 226, 255, 0.5), rgba(104, 52, 132, 0.24) 58%, transparent 72%);
+  filter:
+    drop-shadow(0 9px 13px rgba(0, 0, 0, 0.34))
+    drop-shadow(0 0 12px rgba(235, 139, 255, 0.28));
 }
 
 .city-unit img {
-  width: 128%;
-  height: 128%;
+  position: relative;
+  z-index: 1;
+  width: 148%;
+  height: 148%;
   object-fit: contain;
   transition: transform 120ms linear, opacity 120ms linear, filter 120ms linear;
 }
 
 .city-unit.enemy img {
-  width: 136%;
-  height: 136%;
+  width: 152%;
+  height: 152%;
 }
 
 .city-unit.hidden img {
