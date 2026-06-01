@@ -6,7 +6,7 @@ function assetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
 }
 
-type Screen = 'title' | 'map' | 'gallery' | 'video' | 'combat' | 'victory' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city' | 'lightbomb';
+type Screen = 'title' | 'map' | 'gallery' | 'video' | 'combat' | 'victory' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city' | 'lightbomb' | 'revelation';
 type Cutin = {
   title: string;
   image: string;
@@ -51,7 +51,7 @@ type VideoLeadInConfig = {
   title: string;
   src: string;
   actionLabel: string;
-  destination: 'map' | 'combat' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city' | 'lightbomb';
+  destination: 'map' | 'combat' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city' | 'lightbomb' | 'revelation';
 };
 
 type MemoryCardDef = {
@@ -346,6 +346,45 @@ type LightBombNotice = {
   kind: LightBombPowerupKind | 'door' | 'hit';
   text: string;
 } | null;
+type RevelationCell = {
+  row: number;
+  col: number;
+};
+type RevelationStatus = 'ready' | 'playing' | 'won' | 'lost';
+type RevelationEnemyKind = 'jellyfish' | 'squid' | 'urchin' | 'anemone';
+type RevelationPowerKind = 'speed' | 'freeze' | 'reveal' | 'shield' | 'slow' | 'life';
+type RevelationEnemy = {
+  id: number;
+  kind: RevelationEnemyKind;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+};
+type RevelationPowerup = RevelationCell & {
+  id: number;
+  kind: RevelationPowerKind;
+};
+type RevelationPlayer = {
+  x: number;
+  y: number;
+  safeX: number;
+  safeY: number;
+  dir: CityDirection;
+  drawing: boolean;
+  shieldUntil: number;
+  speedUntil: number;
+  slowUntil: number;
+  freezeUntil: number;
+  pulseCharges: number;
+};
+type RevelationNoticeKind = RevelationPowerKind | 'hit' | 'seal';
+type RevelationNotice = {
+  id: number;
+  text: string;
+  kind: RevelationNoticeKind;
+} | null;
 type DirectionPadIntent = {
   primary: CityDirection;
   secondary?: CityDirection;
@@ -389,6 +428,11 @@ const assets = {
   napoleonWrasseHost: assetUrl('/assets/mobile/hosts/napoleon-wrasse-warrior-setting-cutout-v01.png?v=20260529'),
   morayHost: assetUrl('/assets/mobile/hosts/moray-strategist-setting-cutout-v01.png?v=20260529'),
   princeIcon: assetUrl('/assets/mobile/icons/prince-clownfish-circle-v01.png?v=20260529'),
+  revelation: {
+    frozen: assetUrl('/assets/mobile/revelation/ice-princess-seal-v01.webp?v=20260601'),
+    released: assetUrl('/assets/mobile/revelation/ice-princess-released-v01.webp?v=20260601'),
+    jellyfish: assetUrl('/assets/mobile/revelation/jellyfish-god-cutout-v01.png?v=20260601'),
+  },
   lightBombHeads: {
     prince: assetUrl('/assets/mobile/lightbomb/prince-head-v01.png?v=20260601'),
     panther: assetUrl('/assets/mobile/lightbomb/black-panther-ninja-upper-v01.png?v=20260601c'),
@@ -555,6 +599,13 @@ const videoLeadIns = {
     src: assetUrl('/assets/mobile/videos/lightbomb-maze-intro.mp4?v=20260601'),
     actionLabel: '進入迷宮',
     destination: 'lightbomb',
+  },
+  ancientRevelation: {
+    eyebrow: '遠古神啟示',
+    title: '冰晶王女的封印板',
+    src: assetUrl('/assets/mobile/videos/ice-crystal-castle-intro.mp4?v=20260528'),
+    actionLabel: '進入封印板',
+    destination: 'revelation',
   },
 } satisfies Record<string, VideoLeadInConfig>;
 
@@ -945,6 +996,30 @@ const lightBombEnemyDelays: Record<LightBombEnemyKind, number> = {
 };
 const lightBombDirections: CityDirection[] = ['up', 'down', 'left', 'right'];
 const lightBombEnemyPattern: LightBombEnemyKind[] = ['squid', 'urchin', 'anemone', 'squid', 'urchin', 'anemone', 'squid', 'urchin', 'squid', 'anemone'];
+const revelationCols = 44;
+const revelationRows = 72;
+const revelationSafeBorder = 2;
+const revelationTargetPercent = 72;
+const revelationTimeLimitMs = 150000;
+const revelationStart = { col: Math.floor(revelationCols / 2), row: revelationRows - revelationSafeBorder };
+const revelationEnemyKinds: RevelationEnemyKind[] = ['jellyfish', 'urchin', 'squid', 'anemone', 'urchin', 'squid'];
+const revelationPowerKinds: RevelationPowerKind[] = ['speed', 'freeze', 'reveal', 'shield', 'slow', 'life', 'freeze', 'reveal', 'speed', 'shield'];
+const revelationPowerLabels: Record<RevelationPowerKind, string> = {
+  speed: '速',
+  freeze: '定',
+  reveal: '星',
+  shield: '盾',
+  slow: '緩',
+  life: '命',
+};
+const revelationPowerText: Record<RevelationPowerKind, string> = {
+  speed: '王子加速',
+  freeze: '凝光脈衝 +1',
+  reveal: '星點開圖',
+  shield: '冰晶護盾',
+  slow: '敵群緩速',
+  life: '命數 +1',
+};
 
 function sameCell(a: SnakeCell, b: SnakeCell) {
   return a.row === b.row && a.col === b.col;
@@ -952,6 +1027,214 @@ function sameCell(a: SnakeCell, b: SnakeCell) {
 
 function randomInt(min: number, max: number) {
   return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+function revelationCellKey(col: number, row: number) {
+  return `${col}-${row}`;
+}
+
+function createRevelationClaimed() {
+  return Array.from({ length: revelationRows }, (_, row) =>
+    Array.from({ length: revelationCols }, (_, col) => (
+      row < revelationSafeBorder ||
+      col < revelationSafeBorder ||
+      row >= revelationRows - revelationSafeBorder ||
+      col >= revelationCols - revelationSafeBorder
+    )),
+  );
+}
+
+function revelationCellIsClaimed(grid: boolean[][], col: number, row: number) {
+  if (row < 0 || col < 0 || row >= revelationRows || col >= revelationCols) return true;
+  return grid[row]?.[col] ?? true;
+}
+
+function revelationPositionCell(x: number, y: number): RevelationCell {
+  return {
+    col: clamp(Math.floor(x), 0, revelationCols - 1),
+    row: clamp(Math.floor(y), 0, revelationRows - 1),
+  };
+}
+
+function revelationClaimedPercent(grid: boolean[][]) {
+  let claimed = 0;
+  for (let row = 0; row < revelationRows; row += 1) {
+    for (let col = 0; col < revelationCols; col += 1) {
+      if (grid[row][col]) claimed += 1;
+    }
+  }
+  return Math.round((claimed / (revelationCols * revelationRows)) * 100);
+}
+
+function createRevelationPlayer(): RevelationPlayer {
+  return {
+    x: revelationStart.col + 0.5,
+    y: revelationStart.row + 0.5,
+    safeX: revelationStart.col + 0.5,
+    safeY: revelationStart.row + 0.5,
+    dir: 'up',
+    drawing: false,
+    shieldUntil: 0,
+    speedUntil: 0,
+    slowUntil: 0,
+    freezeUntil: 0,
+    pulseCharges: 0,
+  };
+}
+
+function randomRevelationVelocity(speed: number) {
+  const angle = Math.random() * Math.PI * 2;
+  const vx = Math.cos(angle) * speed;
+  const vy = Math.sin(angle) * speed;
+  return { vx, vy };
+}
+
+function revelationEnemyBlocked(grid: boolean[][], x: number, y: number, size: number) {
+  if (x < revelationSafeBorder + 0.4 || y < revelationSafeBorder + 0.4 || x > revelationCols - revelationSafeBorder - 0.4 || y > revelationRows - revelationSafeBorder - 0.4) return true;
+  const radius = Math.max(0, size * 0.38);
+  const probes = [
+    { x, y },
+    { x: x - radius, y },
+    { x: x + radius, y },
+    { x, y: y - radius },
+    { x, y: y + radius },
+  ];
+  return probes.some((point) => {
+    const cell = revelationPositionCell(point.x, point.y);
+    return revelationCellIsClaimed(grid, cell.col, cell.row);
+  });
+}
+
+function revelationCellNearEnemies(cell: RevelationCell, enemies: RevelationEnemy[], radius: number) {
+  return enemies.some((enemy) => Math.hypot(cell.col + 0.5 - enemy.x, cell.row + 0.5 - enemy.y) < radius + enemy.size * 0.5);
+}
+
+function randomRevelationOpenCell(grid: boolean[][], enemies: RevelationEnemy[] = [], margin = 5): RevelationCell {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    const cell = {
+      col: randomInt(revelationSafeBorder + 2, revelationCols - revelationSafeBorder - 3),
+      row: randomInt(revelationSafeBorder + 3, revelationRows - revelationSafeBorder - 4),
+    };
+    if (!revelationCellIsClaimed(grid, cell.col, cell.row) && !revelationCellNearEnemies(cell, enemies, margin)) return cell;
+  }
+  return { col: Math.floor(revelationCols / 2), row: Math.floor(revelationRows / 2) };
+}
+
+function createRevelationEnemies(grid: boolean[][]): RevelationEnemy[] {
+  return revelationEnemyKinds.map((kind, index) => {
+    const cell = randomRevelationOpenCell(grid, [], kind === 'jellyfish' ? 9 : 5);
+    const speed = kind === 'jellyfish' ? 3.15 : kind === 'anemone' ? 2.15 : kind === 'urchin' ? 2.7 : 3.05;
+    const velocity = randomRevelationVelocity(speed);
+    return {
+      id: index + 1,
+      kind,
+      x: cell.col + 0.5,
+      y: cell.row + 0.5,
+      vx: velocity.vx,
+      vy: velocity.vy,
+      size: kind === 'jellyfish' ? 3.2 : kind === 'anemone' ? 1.45 : 1.22,
+    };
+  });
+}
+
+function createRevelationPowerups(grid: boolean[][], enemies: RevelationEnemy[]) {
+  return revelationPowerKinds.map((kind, index) => {
+    const cell = randomRevelationOpenCell(grid, enemies, 4);
+    return {
+      id: index + 1,
+      kind,
+      ...cell,
+    };
+  });
+}
+
+function claimRevelationDots(grid: boolean[][], enemies: RevelationEnemy[]) {
+  const nextGrid = grid.map((row) => [...row]);
+  for (let dot = 0; dot < 5; dot += 1) {
+    const center = randomRevelationOpenCell(nextGrid, enemies, 5);
+    const radius = randomInt(2, 3);
+    for (let row = center.row - radius; row <= center.row + radius; row += 1) {
+      for (let col = center.col - radius; col <= center.col + radius; col += 1) {
+        if (
+          row >= revelationSafeBorder &&
+          col >= revelationSafeBorder &&
+          row < revelationRows - revelationSafeBorder &&
+          col < revelationCols - revelationSafeBorder &&
+          Math.hypot(col - center.col, row - center.row) <= radius &&
+          !revelationCellNearEnemies({ col, row }, enemies, 2.5)
+        ) nextGrid[row][col] = true;
+      }
+    }
+  }
+  return nextGrid;
+}
+
+function resolveRevelationCapture(grid: boolean[][], trail: RevelationCell[], enemies: RevelationEnemy[]) {
+  const trailKeys = new Set(trail.map((cell) => revelationCellKey(cell.col, cell.row)));
+  const blocked = (col: number, row: number) => revelationCellIsClaimed(grid, col, row) || trailKeys.has(revelationCellKey(col, row));
+  const visited = new Set<string>();
+  const queue: RevelationCell[] = [];
+  enemies.forEach((enemy) => {
+    const center = revelationPositionCell(enemy.x, enemy.y);
+    const radius = Math.ceil(enemy.size * 0.55);
+    for (let row = center.row - radius; row <= center.row + radius; row += 1) {
+      for (let col = center.col - radius; col <= center.col + radius; col += 1) {
+        const key = revelationCellKey(col, row);
+        if (
+          col >= 0 &&
+          row >= 0 &&
+          col < revelationCols &&
+          row < revelationRows &&
+          !blocked(col, row) &&
+          !visited.has(key)
+        ) {
+          visited.add(key);
+          queue.push({ col, row });
+        }
+      }
+    }
+  });
+
+  for (let index = 0; index < queue.length; index += 1) {
+    const current = queue[index];
+    [
+      { col: current.col + 1, row: current.row },
+      { col: current.col - 1, row: current.row },
+      { col: current.col, row: current.row + 1 },
+      { col: current.col, row: current.row - 1 },
+    ].forEach((next) => {
+      const key = revelationCellKey(next.col, next.row);
+      if (
+        next.col < 0 ||
+        next.row < 0 ||
+        next.col >= revelationCols ||
+        next.row >= revelationRows ||
+        blocked(next.col, next.row) ||
+        visited.has(key)
+      ) return;
+      visited.add(key);
+      queue.push(next);
+    });
+  }
+
+  const nextGrid = grid.map((row) => [...row]);
+  const capturedKeys = new Set<string>();
+  trail.forEach((cell) => {
+    if (cell.row >= 0 && cell.col >= 0 && cell.row < revelationRows && cell.col < revelationCols) {
+      nextGrid[cell.row][cell.col] = true;
+      capturedKeys.add(revelationCellKey(cell.col, cell.row));
+    }
+  });
+  for (let row = 0; row < revelationRows; row += 1) {
+    for (let col = 0; col < revelationCols; col += 1) {
+      const key = revelationCellKey(col, row);
+      if (!grid[row][col] && !visited.has(key)) {
+        nextGrid[row][col] = true;
+        capturedKeys.add(key);
+      }
+    }
+  }
+  return { grid: nextGrid, capturedKeys };
 }
 
 function cityDirectionVector(direction: CityDirection) {
@@ -1815,9 +2098,16 @@ function useVisualViewportFrame() {
   }, []);
 }
 
+function initialScreenFromQuery(): Screen {
+  if (typeof window === 'undefined') return 'title';
+  const scene = new URLSearchParams(window.location.search).get('scene');
+  const directScreens: Screen[] = ['map', 'combat', 'memory', 'breakout', 'minefield', 'snowfield', 'snake', 'tower', 'city', 'lightbomb', 'revelation'];
+  return directScreens.includes(scene as Screen) ? scene as Screen : 'title';
+}
+
 export default function App() {
   useVisualViewportFrame();
-  const [screen, setScreen] = useState<Screen>('title');
+  const [screen, setScreen] = useState<Screen>(() => initialScreenFromQuery());
   const [cleared, setCleared] = useState(false);
   const [videoLeadIn, setVideoLeadIn] = useState<VideoLeadInConfig>(videoLeadIns.startGame);
 
@@ -1906,6 +2196,11 @@ export default function App() {
       setScreen('lightbomb');
       return;
     }
+    if (videoLeadIn.destination === 'revelation') {
+      void startOceanBgm();
+      setScreen('revelation');
+      return;
+    }
     void startOceanBgm();
     setScreen('memory');
   };
@@ -1927,6 +2222,7 @@ export default function App() {
             onTower={() => openVideoLeadIn(videoLeadIns.abyssTower)}
             onCity={() => openVideoLeadIn(videoLeadIns.underseaCity)}
             onLightBomb={() => openVideoLeadIn(videoLeadIns.lightBombMaze)}
+            onRevelation={() => openVideoLeadIn(videoLeadIns.ancientRevelation)}
           />
         )}
         {screen === 'gallery' && <CharacterGallery onBack={showTitle} />}
@@ -1938,6 +2234,7 @@ export default function App() {
         {screen === 'tower' && <AbyssTowerGame onBack={showMap} />}
         {screen === 'city' && <UnderseaCityGame onBack={showMap} />}
         {screen === 'lightbomb' && <LightBombMazeGame onBack={showMap} />}
+        {screen === 'revelation' && <AncientRevelationGame onBack={showMap} />}
         {screen === 'video' && <VideoLeadIn leadIn={videoLeadIn} onComplete={completeVideoLeadIn} />}
         {screen === 'combat' && (
           <CombatStage
@@ -1985,6 +2282,7 @@ function EpisodeMap({
   onTower,
   onCity,
   onLightBomb,
+  onRevelation,
 }: {
   cleared: boolean;
   onBack: () => void;
@@ -1997,6 +2295,7 @@ function EpisodeMap({
   onTower: () => void;
   onCity: () => void;
   onLightBomb: () => void;
+  onRevelation: () => void;
 }) {
   const nodes = [
     ['冰晶王城', 'breakout'],
@@ -2008,6 +2307,7 @@ function EpisodeMap({
     ['深淵高塔', 'tower'],
     ['海底城市', 'city'],
     ['海光迷宮', 'lightbomb'],
+    ['遠古神啟示', 'revelation'],
   ];
   return (
     <section className="screen map-screen">
@@ -2036,6 +2336,8 @@ function EpisodeMap({
                               ? onCity
                               : name === '海光迷宮'
                                 ? onLightBomb
+                                : name === '遠古神啟示'
+                                  ? onRevelation
                         : undefined
             }
           >
@@ -2061,6 +2363,8 @@ function EpisodeMap({
                               ? '坦克'
                               : state === 'lightbomb'
                                 ? '光爆'
+                                : state === 'revelation'
+                                  ? '天蠶變'
                     : state === 'coming'
                       ? '劇情'
                       : '鎖定'}
@@ -5443,6 +5747,502 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
             <div className="lightbomb-result">
               <strong>{status === 'won' ? '三層通路開啟' : '光爆失誤'}</strong>
               <button onClick={status === 'won' ? returnToSelect : restart}>{status === 'won' ? '重新選角' : '重新挑戰'}</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AncientRevelationGame({ onBack }: { onBack: () => void }) {
+  const arenaRef = useRef<HTMLDivElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const movePointerRef = useRef<number | null>(null);
+  const moveIntentRef = useRef<DirectionPadIntent>(null);
+  const lastTickRef = useRef(0);
+  const remainingRef = useRef(revelationTimeLimitMs);
+  const noticeIdRef = useRef(1);
+  const noticeTimerRef = useRef<number | null>(null);
+  const claimedRef = useRef<boolean[][]>(createRevelationClaimed());
+  const playerRef = useRef<RevelationPlayer>(createRevelationPlayer());
+  const enemiesRef = useRef<RevelationEnemy[]>(createRevelationEnemies(claimedRef.current));
+  const powerupsRef = useRef<RevelationPowerup[]>(createRevelationPowerups(claimedRef.current, enemiesRef.current));
+  const trailRef = useRef<RevelationCell[]>([]);
+  const statusRef = useRef<RevelationStatus>('ready');
+  const livesRef = useRef(3);
+
+  const [claimed, setClaimed] = useState(() => claimedRef.current);
+  const [player, setPlayer] = useState(() => playerRef.current);
+  const [enemies, setEnemies] = useState(() => enemiesRef.current);
+  const [powerups, setPowerups] = useState(() => powerupsRef.current);
+  const [trail, setTrail] = useState<RevelationCell[]>([]);
+  const [status, setStatus] = useState<RevelationStatus>('ready');
+  const [lives, setLives] = useState(3);
+  const [remaining, setRemaining] = useState(revelationTimeLimitMs);
+  const [notice, setNotice] = useState<RevelationNotice>(null);
+  const [camera, setCamera] = useState({ x: Math.max(0, revelationStart.col - 5.5), y: Math.max(0, revelationStart.row - 15) });
+  const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
+  const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
+  const [padVector, setPadVector] = useState<DirectionPadVector>({ x: 0, y: 0 });
+
+  const showNotice = useCallback((text: string, kind: RevelationNoticeKind = 'seal') => {
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    setNotice({ id: noticeIdRef.current++, text, kind });
+    noticeTimerRef.current = window.setTimeout(() => setNotice(null), 1300);
+  }, []);
+
+  const syncGame = useCallback((next: {
+    claimed?: boolean[][];
+    player?: RevelationPlayer;
+    enemies?: RevelationEnemy[];
+    powerups?: RevelationPowerup[];
+    trail?: RevelationCell[];
+    status?: RevelationStatus;
+    lives?: number;
+    remaining?: number;
+  }) => {
+    if (next.claimed) {
+      claimedRef.current = next.claimed;
+      setClaimed(next.claimed);
+    }
+    if (next.player) {
+      playerRef.current = next.player;
+      setPlayer(next.player);
+    }
+    if (next.enemies) {
+      enemiesRef.current = next.enemies;
+      setEnemies(next.enemies);
+    }
+    if (next.powerups) {
+      powerupsRef.current = next.powerups;
+      setPowerups(next.powerups);
+    }
+    if (next.trail) {
+      trailRef.current = next.trail;
+      setTrail(next.trail);
+    }
+    if (next.status) {
+      statusRef.current = next.status;
+      setStatus(next.status);
+    }
+    if (typeof next.lives === 'number') {
+      livesRef.current = next.lives;
+      setLives(next.lives);
+    }
+    if (typeof next.remaining === 'number') {
+      remainingRef.current = next.remaining;
+      setRemaining(next.remaining);
+    }
+  }, []);
+
+  const keepEnemiesOpen = useCallback((grid: boolean[][], items: RevelationEnemy[]) => items.map((enemy) => {
+    if (!revelationEnemyBlocked(grid, enemy.x, enemy.y, enemy.size)) return enemy;
+    const cell = randomRevelationOpenCell(grid, [], enemy.kind === 'jellyfish' ? 8 : 4);
+    const velocity = randomRevelationVelocity(Math.max(1.8, Math.hypot(enemy.vx, enemy.vy)));
+    return { ...enemy, x: cell.col + 0.5, y: cell.row + 0.5, vx: velocity.vx, vy: velocity.vy };
+  }), []);
+
+  const restart = useCallback(() => {
+    const nextClaimed = createRevelationClaimed();
+    const nextEnemies = createRevelationEnemies(nextClaimed);
+    const nextPlayer = createRevelationPlayer();
+    syncGame({
+      claimed: nextClaimed,
+      player: nextPlayer,
+      enemies: nextEnemies,
+      powerups: createRevelationPowerups(nextClaimed, nextEnemies),
+      trail: [],
+      status: 'ready',
+      lives: 3,
+      remaining: revelationTimeLimitMs,
+    });
+    moveIntentRef.current = null;
+    setPadDirection(null);
+    setPadVector({ x: 0, y: 0 });
+    showNotice('封印板待命', 'seal');
+  }, [showNotice, syncGame]);
+
+  const resetAfterHit = useCallback((time: number) => {
+    const currentPlayer = playerRef.current;
+    if (currentPlayer.shieldUntil > time) {
+      const nextPlayer = {
+        ...currentPlayer,
+        x: currentPlayer.safeX,
+        y: currentPlayer.safeY,
+        drawing: false,
+        shieldUntil: 0,
+      };
+      syncGame({ player: nextPlayer, trail: [] });
+      playGameSfx('hit');
+      showNotice('護盾擋下裂縫', 'shield');
+      return;
+    }
+    const nextLives = livesRef.current - 1;
+    const nextPlayer = {
+      ...createRevelationPlayer(),
+      pulseCharges: currentPlayer.pulseCharges,
+      freezeUntil: currentPlayer.freezeUntil,
+      slowUntil: currentPlayer.slowUntil,
+    };
+    syncGame({
+      player: nextPlayer,
+      trail: [],
+      lives: nextLives,
+      status: nextLives > 0 ? 'ready' : 'lost',
+    });
+    moveIntentRef.current = null;
+    setPadDirection(null);
+    setPadVector({ x: 0, y: 0 });
+    playGameSfx('hit');
+    showNotice(nextLives > 0 ? '封線碎裂' : '封印失敗', 'hit');
+  }, [showNotice, syncGame]);
+
+  const applyCapturedPowerups = useCallback((capturedKeys: Set<string>, baseGrid: boolean[][], baseEnemies: RevelationEnemy[], time: number) => {
+    let nextGrid = baseGrid;
+    let nextPlayer = playerRef.current;
+    const collected = powerupsRef.current.filter((powerup) => capturedKeys.has(revelationCellKey(powerup.col, powerup.row)));
+    collected.forEach((powerup) => {
+      if (powerup.kind === 'speed') nextPlayer = { ...nextPlayer, speedUntil: time + 9000 };
+      if (powerup.kind === 'freeze') nextPlayer = { ...nextPlayer, pulseCharges: Math.min(3, nextPlayer.pulseCharges + 1) };
+      if (powerup.kind === 'shield') nextPlayer = { ...nextPlayer, shieldUntil: time + 13000 };
+      if (powerup.kind === 'slow') nextPlayer = { ...nextPlayer, slowUntil: time + 9500 };
+      if (powerup.kind === 'life') syncGame({ lives: Math.min(5, livesRef.current + 1) });
+      if (powerup.kind === 'reveal') nextGrid = claimRevelationDots(nextGrid, baseEnemies);
+      showNotice(revelationPowerText[powerup.kind], powerup.kind);
+      playGameSfx('powerup');
+    });
+    const nextEnemies = keepEnemiesOpen(nextGrid, baseEnemies);
+    const remainingPowerups = powerupsRef.current.filter((powerup) => !capturedKeys.has(revelationCellKey(powerup.col, powerup.row)));
+    const refilled = [...remainingPowerups];
+    while (refilled.length < 9) {
+      const cell = randomRevelationOpenCell(nextGrid, nextEnemies, 4);
+      refilled.push({
+        id: Date.now() + refilled.length + Math.floor(Math.random() * 999),
+        kind: revelationPowerKinds[randomInt(0, revelationPowerKinds.length - 1)],
+        ...cell,
+      });
+    }
+    return { grid: nextGrid, player: nextPlayer, enemies: nextEnemies, powerups: refilled };
+  }, [keepEnemiesOpen, showNotice, syncGame]);
+
+  const activatePulse = useCallback(() => {
+    const currentPlayer = playerRef.current;
+    if (currentPlayer.pulseCharges <= 0 || statusRef.current === 'won' || statusRef.current === 'lost') {
+      showNotice('需要圈住定身珠', 'freeze');
+      return;
+    }
+    const nextPlayer = {
+      ...currentPlayer,
+      pulseCharges: currentPlayer.pulseCharges - 1,
+      freezeUntil: performance.now() + 4200,
+    };
+    syncGame({ player: nextPlayer, status: statusRef.current === 'ready' ? 'playing' : statusRef.current });
+    playGameSfx('blast');
+    showNotice('凝光脈衝', 'freeze');
+  }, [showNotice, syncGame]);
+
+  useEffect(() => {
+    const board = arenaRef.current;
+    if (!board) return;
+    const updateSize = () => {
+      const rect = board.getBoundingClientRect();
+      setArenaSize({ width: rect.width, height: rect.height });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(board);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const tick = (time: number) => {
+      const last = lastTickRef.current || time;
+      const dt = Math.min(0.05, (time - last) / 1000);
+      lastTickRef.current = time;
+      const currentStatus = statusRef.current;
+
+      if (currentStatus === 'playing') {
+        const nextRemaining = Math.max(0, remainingRef.current - dt * 1000);
+        remainingRef.current = nextRemaining;
+        setRemaining(nextRemaining);
+        if (nextRemaining <= 0) {
+          syncGame({ status: 'lost' });
+          showNotice('時間耗盡', 'hit');
+        }
+      }
+
+      if (statusRef.current === 'playing') {
+        const grid = claimedRef.current;
+        const intent = moveIntentRef.current;
+        let currentPlayer = playerRef.current;
+        const isFrozen = currentPlayer.freezeUntil > time;
+        const enemyScale = isFrozen ? 0 : currentPlayer.slowUntil > time ? 0.46 : 1;
+        let nextEnemies = enemiesRef.current.map((enemy) => {
+          if (enemyScale === 0) return enemy;
+          let nextEnemy = { ...enemy };
+          const stepX = nextEnemy.vx * enemyScale * dt;
+          const stepY = nextEnemy.vy * enemyScale * dt;
+          if (!revelationEnemyBlocked(grid, nextEnemy.x + stepX, nextEnemy.y, nextEnemy.size)) nextEnemy.x += stepX;
+          else nextEnemy.vx *= -1;
+          if (!revelationEnemyBlocked(grid, nextEnemy.x, nextEnemy.y + stepY, nextEnemy.size)) nextEnemy.y += stepY;
+          else nextEnemy.vy *= -1;
+          return nextEnemy;
+        });
+
+        if (intent?.primary) {
+          const direction = intent.primary;
+          const vector = cityDirectionVector(direction);
+          const speed = (currentPlayer.speedUntil > time ? 10.3 : 7.2) * dt;
+          const nextX = clamp(currentPlayer.x + vector.x * speed, 0.5, revelationCols - 0.5);
+          const nextY = clamp(currentPlayer.y + vector.y * speed, 0.5, revelationRows - 0.5);
+          const nextCell = revelationPositionCell(nextX, nextY);
+          const nextSafe = revelationCellIsClaimed(grid, nextCell.col, nextCell.row);
+          let nextTrail = trailRef.current;
+          let hitTrail = false;
+
+          if (!currentPlayer.drawing) {
+            if (!nextSafe) {
+              const startCell = revelationPositionCell(currentPlayer.x, currentPlayer.y);
+              nextTrail = [startCell, nextCell];
+              currentPlayer = { ...currentPlayer, drawing: true, dir: direction };
+            } else {
+              currentPlayer = { ...currentPlayer, safeX: nextX, safeY: nextY, dir: direction };
+            }
+          } else if (nextSafe) {
+            const capture = resolveRevelationCapture(grid, [...nextTrail, nextCell], nextEnemies);
+            const applied = applyCapturedPowerups(capture.capturedKeys, capture.grid, nextEnemies, time);
+            nextEnemies = applied.enemies;
+            const percent = revelationClaimedPercent(applied.grid);
+            currentPlayer = {
+              ...applied.player,
+              x: nextX,
+              y: nextY,
+              safeX: nextX,
+              safeY: nextY,
+              dir: direction,
+              drawing: false,
+            };
+            syncGame({
+              claimed: applied.grid,
+              player: currentPlayer,
+              enemies: nextEnemies,
+              powerups: applied.powerups,
+              trail: [],
+              status: percent >= revelationTargetPercent ? 'won' : 'playing',
+            });
+            playGameSfx(percent >= revelationTargetPercent ? 'door' : 'powerup');
+            if (percent >= revelationTargetPercent) showNotice('王女解封', 'seal');
+            rafRef.current = requestAnimationFrame(tick);
+            return;
+          } else {
+            const lastTrail = nextTrail[nextTrail.length - 1];
+            const nextKey = revelationCellKey(nextCell.col, nextCell.row);
+            const previousTrail = new Set(nextTrail.slice(0, -2).map((cell) => revelationCellKey(cell.col, cell.row)));
+            hitTrail = previousTrail.has(nextKey);
+            if (!lastTrail || lastTrail.col !== nextCell.col || lastTrail.row !== nextCell.row) nextTrail = [...nextTrail, nextCell];
+            currentPlayer = { ...currentPlayer, dir: direction };
+          }
+
+          currentPlayer = { ...currentPlayer, x: nextX, y: nextY };
+          if (hitTrail) {
+            resetAfterHit(time);
+            rafRef.current = requestAnimationFrame(tick);
+            return;
+          }
+          syncGame({ player: currentPlayer, trail: nextTrail });
+        }
+
+        const currentTrail = trailRef.current;
+        if (playerRef.current.drawing) {
+          const playerHit = nextEnemies.some((enemy) => Math.hypot(enemy.x - playerRef.current.x, enemy.y - playerRef.current.y) < enemy.size * 0.42 + 0.25);
+          const trailHit = currentTrail.some((cell) => nextEnemies.some((enemy) => Math.hypot(enemy.x - (cell.col + 0.5), enemy.y - (cell.row + 0.5)) < enemy.size * 0.45));
+          if (playerHit || trailHit) {
+            resetAfterHit(time);
+            rafRef.current = requestAnimationFrame(tick);
+            return;
+          }
+        }
+        syncGame({ enemies: nextEnemies });
+      }
+
+      const currentPlayer = playerRef.current;
+      const cellPx = Math.max(18, Math.min((arenaSize.width || 360) / 11, (arenaSize.height || 560) / 18));
+      const viewCols = Math.max(1, (arenaSize.width || cellPx * 11) / cellPx);
+      const viewRows = Math.max(1, (arenaSize.height || cellPx * 18) / cellPx);
+      const targetCamera = {
+        x: clamp(currentPlayer.x - viewCols / 2, 0, Math.max(0, revelationCols - viewCols)),
+        y: clamp(currentPlayer.y - viewRows / 2, 0, Math.max(0, revelationRows - viewRows)),
+      };
+      setCamera((previous) => ({
+        x: previous.x + (targetCamera.x - previous.x) * 0.16,
+        y: previous.y + (targetCamera.y - previous.y) * 0.16,
+      }));
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [applyCapturedPowerups, arenaSize.height, arenaSize.width, resetAfterHit, showNotice, syncGame]);
+
+  const updatePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const input = directionPadInputFromPointer(event.clientX, event.clientY, event.currentTarget);
+    moveIntentRef.current = input.intent;
+    setPadDirection(input.intent?.primary ?? null);
+    setPadVector(input.intent ? input.vector : { x: 0, y: 0 });
+    if (input.intent && statusRef.current === 'ready') syncGame({ status: 'playing' });
+  }, [syncGame]);
+
+  const releasePad = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (event && movePointerRef.current !== null && event.pointerId !== movePointerRef.current) return;
+    movePointerRef.current = null;
+    moveIntentRef.current = null;
+    setPadDirection(null);
+    setPadVector({ x: 0, y: 0 });
+  }, []);
+
+  const cellPx = Math.max(18, Math.min((arenaSize.width || 360) / 11, (arenaSize.height || 560) / 18));
+  const worldWidth = cellPx * revelationCols;
+  const worldHeight = cellPx * revelationRows;
+  const viewportStyle: CSSProperties = {
+    ['--revelation-cell-px' as string]: `${cellPx}px`,
+  };
+  const worldStyle: CSSProperties = {
+    width: `${worldWidth}px`,
+    height: `${worldHeight}px`,
+    transform: `translate3d(${-camera.x * cellPx}px, ${-camera.y * cellPx}px, 0)`,
+  };
+  const cellStyle = (cell: RevelationCell): CSSProperties => ({
+    left: `${cell.col * cellPx}px`,
+    top: `${cell.row * cellPx}px`,
+    width: `${cellPx}px`,
+    height: `${cellPx}px`,
+  });
+  const tokenStyle = (x: number, y: number, size = 1): CSSProperties => ({
+    left: `${x * cellPx}px`,
+    top: `${y * cellPx}px`,
+    width: `${cellPx * size}px`,
+    height: `${cellPx * size}px`,
+  });
+  const claimedCells = useMemo(() => {
+    const cells: RevelationCell[] = [];
+    claimed.forEach((rowCells, row) => rowCells.forEach((isClaimed, col) => {
+      if (isClaimed) cells.push({ col, row });
+    }));
+    return cells;
+  }, [claimed]);
+  const percent = revelationClaimedPercent(claimed);
+  const remainingSec = Math.ceil(remaining / 1000);
+  const padStickStyle: CSSProperties = {
+    ['--pad-x' as string]: `${padVector.x}px`,
+    ['--pad-y' as string]: `${padVector.y}px`,
+  };
+  const enemyImage = (kind: RevelationEnemyKind) => {
+    if (kind === 'jellyfish') return assets.revelation.jellyfish;
+    if (kind === 'squid') return assets.lightBombHeads.squid;
+    if (kind === 'urchin') return assets.lightBombHeads.urchin;
+    return assets.lightBombHeads.anemone;
+  };
+
+  return (
+    <section className="screen revelation-screen">
+      <div className="revelation-nav">
+        <button className="icon-button" onClick={onBack} aria-label="返回">
+          <ChevronLeft size={20} />
+        </button>
+        <button className="icon-button" onClick={restart} aria-label="重新開始">
+          <RotateCcw size={20} />
+        </button>
+      </div>
+      <div className="revelation-arena" ref={arenaRef}>
+        <div className="revelation-viewport" style={viewportStyle}>
+          <div className="revelation-world" style={worldStyle}>
+            <img className="revelation-bg" src={assets.revelation.frozen} alt="" />
+            <div className="revelation-frost" />
+            {claimedCells.map((cell) => (
+              <span className="revelation-claimed" key={revelationCellKey(cell.col, cell.row)} style={cellStyle(cell)} />
+            ))}
+            {trail.map((cell, index) => (
+              <span className="revelation-trail" key={`${cell.col}-${cell.row}-${index}`} style={cellStyle(cell)} />
+            ))}
+            {powerups.map((powerup) => (
+              <span className={`revelation-powerup ${powerup.kind}`} key={powerup.id} style={tokenStyle(powerup.col + 0.5, powerup.row + 0.5, 0.92)}>
+                {revelationPowerLabels[powerup.kind]}
+              </span>
+            ))}
+            {enemies.map((enemy) => (
+              <span className={`revelation-enemy ${enemy.kind} ${player.freezeUntil > performance.now() ? 'frozen' : ''}`} key={enemy.id} style={tokenStyle(enemy.x, enemy.y, enemy.size)}>
+                <img src={enemyImage(enemy.kind)} alt="" />
+              </span>
+            ))}
+            <span className={`revelation-player dir-${player.dir} ${player.drawing ? 'drawing' : ''} ${player.shieldUntil > performance.now() ? 'shielded' : ''}`} style={tokenStyle(player.x, player.y, 1.14)}>
+              <img src={assets.lightBombHeads.prince} alt="" />
+            </span>
+          </div>
+          <div className="revelation-hud">
+            <span>封印 <strong>{percent}%</strong></span>
+            <span>目標 <strong>{revelationTargetPercent}%</strong></span>
+            <span>時 <strong>{remainingSec}</strong></span>
+            <span>命 <strong>{lives}</strong></span>
+          </div>
+          {notice && <div className={`revelation-notice ${notice.kind}`} key={notice.id}>{notice.text}</div>}
+          {status === 'ready' && (
+            <div className="revelation-ready">
+              <strong>冰晶封印板</strong>
+              <span>從邊界拉出光線，回到安全冰面完成解封。</span>
+            </div>
+          )}
+          <div
+            className={`revelation-controls ${padDirection ? `active-${padDirection}` : ''}`}
+            aria-label="方向控制"
+            onPointerDown={(event) => {
+              if (movePointerRef.current !== null) return;
+              movePointerRef.current = event.pointerId;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              updatePad(event);
+            }}
+            onPointerMove={(event) => {
+              if (movePointerRef.current === event.pointerId) updatePad(event);
+            }}
+            onPointerUp={releasePad}
+            onPointerCancel={releasePad}
+            onLostPointerCapture={releasePad}
+          >
+            <span className="revelation-stick-base" />
+            <span className="revelation-stick-arrow up"><ChevronUp size={14} /></span>
+            <span className="revelation-stick-arrow left"><ChevronLeft size={14} /></span>
+            <span className="revelation-stick-arrow right"><ChevronRight size={14} /></span>
+            <span className="revelation-stick-arrow down"><ChevronDown size={14} /></span>
+            <span className="revelation-stick" style={padStickStyle} />
+          </div>
+          <button
+            className={`revelation-action ${player.pulseCharges > 0 ? 'charged' : ''}`}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              activatePulse();
+            }}
+            aria-label="凝光脈衝"
+          >
+            <Sparkles size={24} />
+            <small>{player.pulseCharges}</small>
+          </button>
+          {(status === 'won' || status === 'lost') && (
+            <div className={`revelation-result ${status}`}>
+              {status === 'won' && <img src={assets.revelation.released} alt="" />}
+              <strong>{status === 'won' ? '冰晶王女解封' : '封印線崩解'}</strong>
+              <button onClick={restart}>{status === 'won' ? '再次啟示' : '重新挑戰'}</button>
             </div>
           )}
         </div>
