@@ -1173,49 +1173,49 @@ function resolveRevelationCapture(grid: boolean[][], trail: RevelationCell[], en
   const trailKeys = new Set(trail.map((cell) => revelationCellKey(cell.col, cell.row)));
   const blocked = (col: number, row: number) => revelationCellIsClaimed(grid, col, row) || trailKeys.has(revelationCellKey(col, row));
   const visited = new Set<string>();
-  const queue: RevelationCell[] = [];
-  enemies.forEach((enemy) => {
-    const center = revelationPositionCell(enemy.x, enemy.y);
-    const radius = Math.ceil(enemy.size * 0.55);
-    for (let row = center.row - radius; row <= center.row + radius; row += 1) {
-      for (let col = center.col - radius; col <= center.col + radius; col += 1) {
-        const key = revelationCellKey(col, row);
-        if (
-          col >= 0 &&
-          row >= 0 &&
-          col < revelationCols &&
-          row < revelationRows &&
-          !blocked(col, row) &&
-          !visited.has(key)
-        ) {
-          visited.add(key);
-          queue.push({ col, row });
-        }
-      }
-    }
-  });
+  const components: RevelationCell[][] = [];
 
-  for (let index = 0; index < queue.length; index += 1) {
-    const current = queue[index];
-    [
-      { col: current.col + 1, row: current.row },
-      { col: current.col - 1, row: current.row },
-      { col: current.col, row: current.row + 1 },
-      { col: current.col, row: current.row - 1 },
-    ].forEach((next) => {
-      const key = revelationCellKey(next.col, next.row);
-      if (
-        next.col < 0 ||
-        next.row < 0 ||
-        next.col >= revelationCols ||
-        next.row >= revelationRows ||
-        blocked(next.col, next.row) ||
-        visited.has(key)
-      ) return;
-      visited.add(key);
-      queue.push(next);
-    });
+  for (let row = 0; row < revelationRows; row += 1) {
+    for (let col = 0; col < revelationCols; col += 1) {
+      const startKey = revelationCellKey(col, row);
+      if (blocked(col, row) || visited.has(startKey)) continue;
+      const component: RevelationCell[] = [];
+      const queue = [{ col, row }];
+      visited.add(startKey);
+      for (let index = 0; index < queue.length; index += 1) {
+        const current = queue[index];
+        component.push(current);
+        [
+          { col: current.col + 1, row: current.row },
+          { col: current.col - 1, row: current.row },
+          { col: current.col, row: current.row + 1 },
+          { col: current.col, row: current.row - 1 },
+        ].forEach((next) => {
+          const key = revelationCellKey(next.col, next.row);
+          if (
+            next.col < 0 ||
+            next.row < 0 ||
+            next.col >= revelationCols ||
+            next.row >= revelationRows ||
+            blocked(next.col, next.row) ||
+            visited.has(key)
+          ) return;
+          visited.add(key);
+          queue.push(next);
+        });
+      }
+      components.push(component);
+    }
   }
+
+  const largestComponent = components.reduce<RevelationCell[] | null>((largest, component) => (
+    !largest || component.length > largest.length ? component : largest
+  ), null);
+  const capturedRegionKeys = new Set<string>();
+  components.forEach((component) => {
+    if (component === largestComponent) return;
+    component.forEach((cell) => capturedRegionKeys.add(revelationCellKey(cell.col, cell.row)));
+  });
 
   const nextGrid = grid.map((row) => [...row]);
   const capturedKeys = new Set<string>();
@@ -1228,13 +1228,25 @@ function resolveRevelationCapture(grid: boolean[][], trail: RevelationCell[], en
   for (let row = 0; row < revelationRows; row += 1) {
     for (let col = 0; col < revelationCols; col += 1) {
       const key = revelationCellKey(col, row);
-      if (!grid[row][col] && !visited.has(key)) {
+      if (!grid[row][col] && capturedRegionKeys.has(key)) {
         nextGrid[row][col] = true;
         capturedKeys.add(key);
       }
     }
   }
-  return { grid: nextGrid, capturedKeys };
+
+  const defeatedEnemyIds = new Set<number>();
+  enemies.forEach((enemy) => {
+    const center = revelationPositionCell(enemy.x, enemy.y);
+    const radius = Math.ceil(enemy.size * 0.5);
+    for (let row = center.row - radius; row <= center.row + radius; row += 1) {
+      for (let col = center.col - radius; col <= center.col + radius; col += 1) {
+        if (capturedKeys.has(revelationCellKey(col, row))) defeatedEnemyIds.add(enemy.id);
+      }
+    }
+  });
+
+  return { grid: nextGrid, capturedKeys, defeatedEnemyIds };
 }
 
 function cityDirectionVector(direction: CityDirection) {
@@ -5836,8 +5848,8 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
     }
   }, []);
 
-  const keepEnemiesOpen = useCallback((grid: boolean[][], items: RevelationEnemy[]) => items.map((enemy) => {
-    if (!revelationEnemyBlocked(grid, enemy.x, enemy.y, enemy.size)) return enemy;
+  const keepEnemiesOpen = useCallback((grid: boolean[][], items: RevelationEnemy[], defeatedEnemyIds = new Set<number>()) => items.map((enemy) => {
+    if (!defeatedEnemyIds.has(enemy.id) && !revelationEnemyBlocked(grid, enemy.x, enemy.y, enemy.size)) return enemy;
     const cell = randomRevelationOpenCell(grid, [], enemy.kind === 'jellyfish' ? 8 : 4);
     const velocity = randomRevelationVelocity(Math.max(1.8, Math.hypot(enemy.vx, enemy.vy)));
     return { ...enemy, x: cell.col + 0.5, y: cell.row + 0.5, vx: velocity.vx, vy: velocity.vy };
@@ -5898,7 +5910,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
     showNotice(nextLives > 0 ? '封線碎裂' : '封印失敗', 'hit');
   }, [showNotice, syncGame]);
 
-  const applyCapturedPowerups = useCallback((capturedKeys: Set<string>, baseGrid: boolean[][], baseEnemies: RevelationEnemy[], time: number) => {
+  const applyCapturedPowerups = useCallback((capturedKeys: Set<string>, defeatedEnemyIds: Set<number>, baseGrid: boolean[][], baseEnemies: RevelationEnemy[], time: number) => {
     let nextGrid = baseGrid;
     let nextPlayer = playerRef.current;
     const collected = powerupsRef.current.filter((powerup) => capturedKeys.has(revelationCellKey(powerup.col, powerup.row)));
@@ -5912,7 +5924,11 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
       showNotice(revelationPowerText[powerup.kind], powerup.kind);
       playGameSfx('powerup');
     });
-    const nextEnemies = keepEnemiesOpen(nextGrid, baseEnemies);
+    if (defeatedEnemyIds.size > 0) {
+      playGameSfx('hit');
+      showNotice(`淨化怪物 x${defeatedEnemyIds.size}`, 'hit');
+    }
+    const nextEnemies = keepEnemiesOpen(nextGrid, baseEnemies, defeatedEnemyIds);
     const remainingPowerups = powerupsRef.current.filter((powerup) => !capturedKeys.has(revelationCellKey(powerup.col, powerup.row)));
     const refilled = [...remainingPowerups];
     while (refilled.length < 9) {
@@ -6017,7 +6033,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
             }
           } else if (nextSafe) {
             const capture = resolveRevelationCapture(grid, [...nextTrail, nextCell], nextEnemies);
-            const applied = applyCapturedPowerups(capture.capturedKeys, capture.grid, nextEnemies, time);
+            const applied = applyCapturedPowerups(capture.capturedKeys, capture.defeatedEnemyIds, capture.grid, nextEnemies, time);
             nextEnemies = applied.enemies;
             const percent = revelationClaimedPercent(applied.grid);
             currentPlayer = {
@@ -6130,6 +6146,12 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
     width: `${cellPx}px`,
     height: `${cellPx}px`,
   });
+  const claimedCellStyle = (cell: RevelationCell): CSSProperties => ({
+    ...cellStyle(cell),
+    backgroundImage: `linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(118, 228, 255, 0.12)), url(${assets.revelation.frozen})`,
+    backgroundSize: `${worldWidth}px ${worldHeight}px`,
+    backgroundPosition: `-${cell.col * cellPx}px -${cell.row * cellPx}px`,
+  });
   const tokenStyle = (x: number, y: number, size = 1): CSSProperties => ({
     left: `${x * cellPx}px`,
     top: `${y * cellPx}px`,
@@ -6172,7 +6194,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
             <img className="revelation-bg" src={assets.revelation.frozen} alt="" />
             <div className="revelation-frost" />
             {claimedCells.map((cell) => (
-              <span className="revelation-claimed" key={revelationCellKey(cell.col, cell.row)} style={cellStyle(cell)} />
+              <span className="revelation-claimed" key={revelationCellKey(cell.col, cell.row)} style={claimedCellStyle(cell)} />
             ))}
             {trail.map((cell, index) => (
               <span className="revelation-trail" key={`${cell.col}-${cell.row}-${index}`} style={cellStyle(cell)} />
