@@ -738,7 +738,8 @@ const cityViewWidth = cityCellSize * cityViewCols;
 const cityViewHeight = cityCellSize * cityViewRows;
 const cityUnitSize = cityCellSize * 0.74;
 const cityUnitVisualSize = cityCellSize * 1.02;
-const cityPlayerStepDelayMs = 178;
+const cityPlayerStepDelayMs = 150;
+const cityPlayerMoveMs = 205;
 const cityStartingBaseHp = 4;
 const cityStartingArmor = 4;
 const cityMaxHp = 5;
@@ -1183,7 +1184,7 @@ function cityTerrainSpeed(x: number, y: number, tiles: CityTile[]) {
 }
 
 function cityVisualStep(value: number, target: number, dt: number) {
-  return cityApproach(value, target, (cityCellSize * dt) / cityPlayerStepDelayMs);
+  return cityApproach(value, target, (cityCellSize * dt) / cityPlayerMoveMs);
 }
 
 function citySmoothVisual<T extends { x: number; y: number }>(previous: T | undefined, target: T, dt: number): T {

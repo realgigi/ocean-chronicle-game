@@ -2148,34 +2148,34 @@ button:disabled {
 @keyframes snakePulse {
   0%,
   100% {
-    transform: translate(-50%, -50%) scale(0.92);
+    transform: translate3d(var(--snake-x, 0px), var(--snake-y, 0px), 0) translate(-50%, -50%) scale(0.92);
   }
 
   50% {
-    transform: translate(-50%, -50%) scale(1.08);
+    transform: translate3d(var(--snake-x, 0px), var(--snake-y, 0px), 0) translate(-50%, -50%) scale(1.08);
   }
 }
 
 @keyframes snakeObstacleIn {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.72);
+    transform: translate3d(var(--snake-x, 0px), var(--snake-y, 0px), 0) translate(-50%, -50%) scale(0.72);
   }
 
   100% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translate3d(var(--snake-x, 0px), var(--snake-y, 0px), 0) translate(-50%, -50%) scale(1);
   }
 }
 
 @keyframes snakePowerup {
   0%,
   100% {
-    transform: translate(-50%, -50%) scale(0.9);
+    transform: translate3d(var(--snake-x, 0px), var(--snake-y, 0px), 0) translate(-50%, -50%) scale(0.9);
   }
 
   50% {
-    transform: translate(-50%, -50%) scale(1.1);
+    transform: translate3d(var(--snake-x, 0px), var(--snake-y, 0px), 0) translate(-50%, -50%) scale(1.1);
   }
 }
 
