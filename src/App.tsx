@@ -391,9 +391,9 @@ const assets = {
   princeIcon: assetUrl('/assets/mobile/icons/prince-clownfish-circle-v01.png?v=20260529'),
   lightBombHeads: {
     prince: assetUrl('/assets/mobile/lightbomb/prince-head-v01.png?v=20260601'),
-    panther: assetUrl('/assets/mobile/hosts/black-panther-ninja-setting-cutout-v01.png?v=20260528'),
-    doubleBand: assetUrl('/assets/mobile/icons/double-band-samurai-portrait-v01.webp?v=20260602'),
-    panda: assetUrl('/assets/mobile/posters/panda-sumo-poster.webp?v=20260602'),
+    panther: assetUrl('/assets/mobile/lightbomb/black-panther-ninja-upper-v01.png?v=20260601b'),
+    doubleBand: assetUrl('/assets/mobile/lightbomb/double-band-clown-upper-v01.png?v=20260601b'),
+    panda: assetUrl('/assets/mobile/lightbomb/panda-sumo-upper-v01.png?v=20260601b'),
     squid: assetUrl('/assets/mobile/lightbomb/squid-head-v01.png?v=20260601'),
     urchin: assetUrl('/assets/mobile/lightbomb/urchin-head-v01.png?v=20260601'),
     anemone: assetUrl('/assets/mobile/lightbomb/anemone-head-v01.png?v=20260601'),
