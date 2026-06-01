@@ -222,8 +222,10 @@ type CityShot = {
   vy: number;
   dir: CityDirection;
   piercing?: boolean;
+  spread?: boolean;
+  double?: boolean;
 };
-type CityPowerupKind = 'speed' | 'shield' | 'armor' | 'fortify' | 'freeze' | 'blast' | 'pierce' | 'repair';
+type CityPowerupKind = 'speed' | 'shield' | 'armor' | 'fortify' | 'freeze' | 'blast' | 'pierce' | 'repair' | 'spread' | 'double' | 'magnet' | 'dash' | 'jam';
 type CityPowerup = {
   id: number;
   kind: CityPowerupKind;
@@ -237,6 +239,20 @@ type CityNotice = {
   id: number;
   kind: CityNoticeKind;
   text: string;
+};
+type CityTimedAbility = 'rapid' | 'shield' | 'freeze' | 'pierce' | 'spread' | 'double' | 'magnet' | 'dash' | 'jam';
+type CityAbilityDurations = Record<CityTimedAbility, number>;
+type CityLevelConfig = {
+  level: number;
+  title: string;
+  targetKills: number;
+  enemyCap: number;
+  spawnMs: number;
+  enemyMoveDelayScale: number;
+  enemyShotDelayScale: number;
+  enemyShotSpeed: number;
+  eliteChance: number;
+  dropChance: number;
 };
 
 type LightBombTileKind = 'solid' | 'soft' | 'rubble' | 'current' | 'kelp' | 'vent' | 'shell';
@@ -748,9 +764,12 @@ const cityPlayerMoveMs = 170;
 const cityStartingBaseHp = 4;
 const cityStartingArmor = 4;
 const cityMaxHp = 5;
-const cityTargetKills = 18;
-const cityEnemyCap = 5;
-const cityEnemySpawnMs = 2300;
+const cityLevels: CityLevelConfig[] = [
+  { level: 1, title: '第一防線', targetKills: 18, enemyCap: 5, spawnMs: 2300, enemyMoveDelayScale: 1, enemyShotDelayScale: 1, enemyShotSpeed: 0.033, eliteChance: 0.32, dropChance: 0.44 },
+  { level: 2, title: '第二防線', targetKills: 24, enemyCap: 7, spawnMs: 1850, enemyMoveDelayScale: 0.84, enemyShotDelayScale: 0.8, enemyShotSpeed: 0.037, eliteChance: 0.42, dropChance: 0.48 },
+  { level: 3, title: '第三防線', targetKills: 30, enemyCap: 9, spawnMs: 1450, enemyMoveDelayScale: 0.68, enemyShotDelayScale: 0.64, enemyShotSpeed: 0.041, eliteChance: 0.54, dropChance: 0.52 },
+];
+const cityMaxLevel = cityLevels.length;
 const cityBase = { x: cityCellCenter(15.5), y: cityCellCenter(29.5), size: cityCellSize * 2 };
 const cityPlayerStart = { x: cityCellCenter(15), y: cityCellCenter(26), dir: 'up' as CityDirection };
 const cityEnemySpawnCells = [
@@ -768,6 +787,11 @@ const cityPowerupWeights: { kind: CityPowerupKind; weight: number }[] = [
   { kind: 'freeze', weight: 14 },
   { kind: 'blast', weight: 10 },
   { kind: 'pierce', weight: 10 },
+  { kind: 'spread', weight: 13 },
+  { kind: 'double', weight: 12 },
+  { kind: 'magnet', weight: 10 },
+  { kind: 'dash', weight: 11 },
+  { kind: 'jam', weight: 9 },
   { kind: 'repair', weight: 7 },
 ];
 const cityPowerupLabels: Record<CityPowerupKind, string> = {
@@ -778,6 +802,11 @@ const cityPowerupLabels: Record<CityPowerupKind, string> = {
   freeze: '寒',
   blast: '震',
   pierce: '穿',
+  spread: '散',
+  double: '雙',
+  magnet: '引',
+  dash: '流',
+  jam: '擾',
   repair: '修',
 };
 const cityPowerupMessages: Record<CityPowerupKind, string> = {
@@ -788,6 +817,11 @@ const cityPowerupMessages: Record<CityPowerupKind, string> = {
   freeze: '敵軍緩速',
   blast: '震波清場',
   pierce: '穿甲啟動',
+  spread: '散彈短效',
+  double: '雙發啟動',
+  magnet: '海光牽引',
+  dash: '海流疾行',
+  jam: '干擾敵火',
   repair: '全體修復',
 };
 const lightBombRows = 31;
@@ -846,6 +880,29 @@ function cityDirectionVector(direction: CityDirection) {
   if (direction === 'down') return { x: 0, y: 1 };
   if (direction === 'left') return { x: -1, y: 0 };
   return { x: 1, y: 0 };
+}
+
+function citySideVector(direction: CityDirection) {
+  const vector = cityDirectionVector(direction);
+  return { x: -vector.y, y: vector.x };
+}
+
+function cityLevelConfig(level: number) {
+  return cityLevels[clamp(level, 1, cityMaxLevel) - 1];
+}
+
+function cityEmptyAbilityDurations(): CityAbilityDurations {
+  return {
+    rapid: 0,
+    shield: 0,
+    freeze: 0,
+    pierce: 0,
+    spread: 0,
+    double: 0,
+    magnet: 0,
+    dash: 0,
+    jam: 0,
+  };
 }
 
 function directionPadVectorFromDirection(direction: CityDirection): DirectionPadVector {
@@ -1100,7 +1157,7 @@ function createCityTiles(): CityTile[] {
   return tiles;
 }
 
-function createCityEnemy(id: number, tiles: CityTile[], occupants: Pick<CityUnit, 'x' | 'y'>[]): CityUnit | null {
+function createCityEnemy(id: number, tiles: CityTile[], occupants: Pick<CityUnit, 'x' | 'y'>[], config = cityLevelConfig(1)): CityUnit | null {
   const spawns = cityEnemySpawnCells
     .map((spawn) => ({ x: cityCellCenter(spawn.col), y: cityCellCenter(spawn.row), dir: spawn.dir }))
     .filter((spawn) => cityCanOccupy(spawn.x, spawn.y, tiles, occupants));
@@ -1111,11 +1168,11 @@ function createCityEnemy(id: number, tiles: CityTile[], occupants: Pick<CityUnit
     x: spawn.x,
     y: spawn.y,
     dir: spawn.dir,
-    hp: Math.random() > 0.68 ? 2 : 1,
-    cooldown: 1500 + Math.random() * 1000,
-    turnTimer: 800 + Math.random() * 1100,
-    moveTimer: 520 + Math.random() * 540,
-    stepDelay: 720 + Math.random() * 260,
+    hp: Math.random() < config.eliteChance ? 2 : 1,
+    cooldown: (1450 + Math.random() * 950) * config.enemyShotDelayScale,
+    turnTimer: (760 + Math.random() * 1000) * config.enemyMoveDelayScale,
+    moveTimer: (500 + Math.random() * 480) * config.enemyMoveDelayScale,
+    stepDelay: (720 + Math.random() * 260) * config.enemyMoveDelayScale,
   };
 }
 
@@ -3328,6 +3385,10 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
     ['--pad-x' as string]: `${padVector.x}px`,
     ['--pad-y' as string]: `${padVector.y}px`,
   };
+  const snakeRenderTime = performance.now();
+  const snakeInvincibleRemaining = invincibleUntil - snakeRenderTime;
+  const snakeInvincibleActive = snakeInvincibleRemaining > 0;
+  const snakeInvincibleEnding = snakeInvincibleActive && snakeInvincibleRemaining < 1600;
 
   return (
     <section className="screen tide-screen">
@@ -3356,10 +3417,13 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
               <span className={`snake-decor ${decor.kind}`} key={decor.id} style={snakeDecorationStyle(decor)} />
             ))}
             <span className="snake-food" style={snakePositionStyle(food)} />
+            {snakeInvincibleActive && (
+              <span className={`snake-aura ${snakeInvincibleEnding ? 'ending' : ''}`} style={snakePositionStyle(snake[0])} />
+            )}
             {snake.map((cell, index) =>
               index === 0 ? (
                 <img
-                  className={`snake-head face-${direction} ${invincibleUntil > performance.now() ? 'invincible' : ''}`}
+                  className={`snake-head face-${direction} ${snakeInvincibleActive ? 'invincible' : ''} ${snakeInvincibleEnding ? 'ending' : ''}`}
                   key="snake-head"
                   src={assets.princeIcon}
                   alt=""
@@ -3404,8 +3468,8 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
             <span>
               命 <strong>{lives}/3</strong>
             </span>
-            {invincibleUntil > performance.now() && (
-              <span className="snake-invincible">
+            {snakeInvincibleActive && (
+              <span className={`snake-invincible ${snakeInvincibleEnding ? 'ending' : ''}`}>
                 <Sparkles size={13} />
                 無敵
               </span>
@@ -3842,6 +3906,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const nextId = useRef(1);
   const spawnTimer = useRef(0);
   const noticeId = useRef(0);
+  const cityLevelRef = useRef(1);
   const playerRef = useRef({ ...cityPlayerStart, cooldown: 0 });
   const visualPlayerRef = useRef({ ...cityPlayerStart });
   const cameraRef = useRef(cityCameraForPosition(cityPlayerStart.x, cityPlayerStart.y));
@@ -3854,6 +3919,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const heldDirectionRef = useRef<DirectionPadIntent>(null);
   const diagonalAxisRef = useRef<'horizontal' | 'vertical'>('horizontal');
   const nextPlayerStepAt = useRef(0);
+  const bankedAbilitiesRef = useRef<CityAbilityDurations>(cityEmptyAbilityDurations());
   const movePointerRef = useRef<number | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
@@ -3866,11 +3932,17 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const [baseHp, setBaseHp] = useState(cityStartingBaseHp);
   const [armor, setArmor] = useState(cityStartingArmor);
   const [kills, setKills] = useState(0);
+  const [cityLevel, setCityLevel] = useState(1);
   const [status, setStatus] = useState<CityStatus>('playing');
   const [rapidUntil, setRapidUntil] = useState(0);
   const [shieldUntil, setShieldUntil] = useState(0);
   const [freezeUntil, setFreezeUntil] = useState(0);
   const [pierceUntil, setPierceUntil] = useState(0);
+  const [spreadUntil, setSpreadUntil] = useState(0);
+  const [doubleUntil, setDoubleUntil] = useState(0);
+  const [magnetUntil, setMagnetUntil] = useState(0);
+  const [dashUntil, setDashUntil] = useState(0);
+  const [jamUntil, setJamUntil] = useState(0);
   const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
   const [padVector, setPadVector] = useState<DirectionPadVector>({ x: 0, y: 0 });
   const [notice, setNotice] = useState<CityNotice | null>(null);
@@ -3882,15 +3954,90 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
   const shieldUntilRef = useRef(0);
   const freezeUntilRef = useRef(0);
   const pierceUntilRef = useRef(0);
+  const spreadUntilRef = useRef(0);
+  const doubleUntilRef = useRef(0);
+  const magnetUntilRef = useRef(0);
+  const dashUntilRef = useRef(0);
+  const jamUntilRef = useRef(0);
 
   const showCityNotice = useCallback((kind: CityNoticeKind, text: string) => {
     noticeId.current += 1;
     setNotice({ id: noticeId.current, kind, text });
   }, []);
 
-  const restart = useCallback(() => {
+  const setCityAbilityUntil = useCallback((ability: CityTimedAbility, until: number) => {
+    if (ability === 'rapid') {
+      rapidUntilRef.current = until;
+      setRapidUntil(until);
+    }
+    if (ability === 'shield') {
+      shieldUntilRef.current = until;
+      setShieldUntil(until);
+    }
+    if (ability === 'freeze') {
+      freezeUntilRef.current = until;
+      setFreezeUntil(until);
+    }
+    if (ability === 'pierce') {
+      pierceUntilRef.current = until;
+      setPierceUntil(until);
+    }
+    if (ability === 'spread') {
+      spreadUntilRef.current = until;
+      setSpreadUntil(until);
+    }
+    if (ability === 'double') {
+      doubleUntilRef.current = until;
+      setDoubleUntil(until);
+    }
+    if (ability === 'magnet') {
+      magnetUntilRef.current = until;
+      setMagnetUntil(until);
+    }
+    if (ability === 'dash') {
+      dashUntilRef.current = until;
+      setDashUntil(until);
+    }
+    if (ability === 'jam') {
+      jamUntilRef.current = until;
+      setJamUntil(until);
+    }
+  }, []);
+
+  const readCityAbilityDurations = useCallback((time: number): CityAbilityDurations => ({
+    rapid: Math.max(0, rapidUntilRef.current - time),
+    shield: Math.max(0, shieldUntilRef.current - time),
+    freeze: Math.max(0, freezeUntilRef.current - time),
+    pierce: Math.max(0, pierceUntilRef.current - time),
+    spread: Math.max(0, spreadUntilRef.current - time),
+    double: Math.max(0, doubleUntilRef.current - time),
+    magnet: Math.max(0, magnetUntilRef.current - time),
+    dash: Math.max(0, dashUntilRef.current - time),
+    jam: Math.max(0, jamUntilRef.current - time),
+  }), []);
+
+  const applyCityAbilityDurations = useCallback((durations: CityAbilityDurations, time: number) => {
+    (Object.keys(durations) as CityTimedAbility[]).forEach((ability) => {
+      setCityAbilityUntil(ability, durations[ability] > 0 ? time + durations[ability] : 0);
+    });
+  }, [setCityAbilityUntil]);
+
+  const resetCityAbilities = useCallback(() => {
+    applyCityAbilityDurations(cityEmptyAbilityDurations(), performance.now());
+    bankedAbilitiesRef.current = cityEmptyAbilityDurations();
+  }, [applyCityAbilityDurations]);
+
+  const extendCityAbility = useCallback((ability: CityTimedAbility, time: number, duration: number, maxDuration = 12000) => {
+    const remaining = readCityAbilityDurations(time)[ability];
+    setCityAbilityUntil(ability, time + Math.min(maxDuration, remaining + duration));
+  }, [readCityAbilityDurations, setCityAbilityUntil]);
+
+  const startCityLevel = useCallback((level: number, options: { resetAbilities?: boolean; abilityDurations?: CityAbilityDurations; notice?: string } = {}) => {
     const nextTiles = createCityTiles();
     const nextCamera = cityCameraForPosition(cityPlayerStart.x, cityPlayerStart.y);
+    const nextLevel = clamp(level, 1, cityMaxLevel);
+    const now = performance.now();
+    cityLevelRef.current = nextLevel;
     playerRef.current = { ...cityPlayerStart, cooldown: 0 };
     visualPlayerRef.current = { ...cityPlayerStart };
     cameraRef.current = nextCamera;
@@ -3911,10 +4058,6 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     armorRef.current = cityStartingArmor;
     killsRef.current = 0;
     statusRef.current = 'playing';
-    rapidUntilRef.current = 0;
-    shieldUntilRef.current = 0;
-    freezeUntilRef.current = 0;
-    pierceUntilRef.current = 0;
     setTiles(nextTiles);
     setVisualPlayer({ ...cityPlayerStart });
     setVisualEnemies([]);
@@ -3924,15 +4067,27 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     setBaseHp(cityStartingBaseHp);
     setArmor(cityStartingArmor);
     setKills(0);
+    setCityLevel(nextLevel);
     setStatus('playing');
-    setRapidUntil(0);
-    setShieldUntil(0);
-    setFreezeUntil(0);
-    setPierceUntil(0);
     setPadDirection(null);
     setPadVector({ x: 0, y: 0 });
-    showCityNotice('spawn', '新地圖');
-  }, [showCityNotice]);
+    if (options.resetAbilities) {
+      resetCityAbilities();
+    } else if (options.abilityDurations) {
+      applyCityAbilityDurations(options.abilityDurations, now);
+    }
+    showCityNotice('spawn', options.notice ?? cityLevelConfig(nextLevel).title);
+  }, [applyCityAbilityDurations, resetCityAbilities, showCityNotice]);
+
+  const restart = useCallback(() => {
+    startCityLevel(1, { resetAbilities: true, notice: '第一防線' });
+  }, [startCityLevel]);
+
+  const continueCity = useCallback(() => {
+    const banked = bankedAbilitiesRef.current;
+    bankedAbilitiesRef.current = cityEmptyAbilityDurations();
+    startCityLevel(cityLevelRef.current, { abilityDurations: banked, notice: '半能量續戰' });
+  }, [startCityLevel]);
 
   useEffect(() => {
     const arena = arenaRef.current;
@@ -4003,7 +4158,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     }
     if (!wasHolding) {
       movePlayerIntent(intent);
-      nextPlayerStepAt.current = startTime + cityPlayerStepDelayMs;
+      nextPlayerStepAt.current = startTime + (dashUntilRef.current > startTime ? 118 : cityPlayerStepDelayMs);
     }
   }, [facePlayerDirection, movePlayerIntent]);
 
@@ -4093,57 +4248,79 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
       lastTime.current = time;
 
       if (statusRef.current === 'playing') {
+        const cityConfig = cityLevelConfig(cityLevelRef.current);
+        const dashActive = dashUntilRef.current > time;
         const heldIntent = heldDirectionRef.current;
         if (heldIntent && time >= nextPlayerStepAt.current) {
           movePlayerIntent(heldIntent);
-          nextPlayerStepAt.current = time + cityPlayerStepDelayMs;
+          nextPlayerStepAt.current = time + (dashActive ? 118 : cityPlayerStepDelayMs);
         }
         const currentTiles = tilesRef.current;
         const currentPlayer = { ...playerRef.current };
         currentPlayer.cooldown -= dt;
         const rapid = rapidUntilRef.current > time;
         const piercing = pierceUntilRef.current > time;
+        const spread = spreadUntilRef.current > time;
+        const double = doubleUntilRef.current > time;
+        const magnet = magnetUntilRef.current > time;
         if (keysRef.current.fire && currentPlayer.cooldown <= 0) {
           const vector = cityDirectionVector(currentPlayer.dir);
-          const allyShot: CityShot = {
+          const side = citySideVector(currentPlayer.dir);
+          const shotSpeed = piercing ? 0.056 : 0.052;
+          const makeAllyShot = (sideOffset: number, sideVelocity: number, flags: Pick<CityShot, 'spread' | 'double'> = {}): CityShot => ({
             id: nextId.current++,
             side: 'ally',
-            x: currentPlayer.x + vector.x * cityCellSize * 0.62,
-            y: currentPlayer.y + vector.y * cityCellSize * 0.62,
-            vx: vector.x * (piercing ? 0.056 : 0.052),
-            vy: vector.y * (piercing ? 0.056 : 0.052),
+            x: currentPlayer.x + vector.x * cityCellSize * 0.62 + side.x * cityCellSize * sideOffset,
+            y: currentPlayer.y + vector.y * cityCellSize * 0.62 + side.y * cityCellSize * sideOffset,
+            vx: vector.x * shotSpeed + side.x * sideVelocity,
+            vy: vector.y * shotSpeed + side.y * sideVelocity,
             dir: currentPlayer.dir,
             piercing,
-          };
+            ...flags,
+          });
+          const allyShots = [makeAllyShot(0, 0)];
+          if (double) {
+            allyShots.push(makeAllyShot(0.36, 0, { double: true }), makeAllyShot(-0.36, 0, { double: true }));
+          }
+          if (spread) {
+            allyShots.push(makeAllyShot(0, 0.021, { spread: true }), makeAllyShot(0, -0.021, { spread: true }));
+          }
           shotsRef.current = [
             ...shotsRef.current,
-            allyShot,
-          ].slice(-20);
-          currentPlayer.cooldown = rapid ? 420 : 680;
+            ...allyShots,
+          ].slice(-30);
+          currentPlayer.cooldown = rapid ? 390 : 650;
+          if (spread) {
+            currentPlayer.cooldown += 90;
+          }
+          if (double) {
+            currentPlayer.cooldown += 60;
+          }
         }
 
         spawnTimer.current += dt;
         let nextEnemies = enemiesRef.current.map((enemy) => ({ ...enemy }));
-        if (spawnTimer.current >= cityEnemySpawnMs && nextEnemies.length < cityEnemyCap && killsRef.current + nextEnemies.length < cityTargetKills) {
+        if (spawnTimer.current >= cityConfig.spawnMs && nextEnemies.length < cityConfig.enemyCap && killsRef.current + nextEnemies.length < cityConfig.targetKills) {
           spawnTimer.current = 0;
-          const spawned = createCityEnemy(nextId.current++, currentTiles, [currentPlayer, ...nextEnemies]);
+          const spawned = createCityEnemy(nextId.current++, currentTiles, [currentPlayer, ...nextEnemies], cityConfig);
           if (spawned) {
             nextEnemies.push(spawned);
           }
         }
 
         const frozen = freezeUntilRef.current > time;
+        const jammed = jamUntilRef.current > time;
         const enemyPace = frozen ? 0.42 : 1;
         const enemyShots: CityShot[] = [];
         const movedEnemies: CityUnit[] = [];
         nextEnemies = nextEnemies.map((enemy) => {
           const nextEnemy = { ...enemy };
-          nextEnemy.turnTimer -= dt * enemyPace;
+          nextEnemy.turnTimer -= dt * (jammed ? 0.65 : enemyPace);
           nextEnemy.moveTimer -= dt * enemyPace;
           const toBaseX = cityBase.x - nextEnemy.x;
           const toBaseY = cityBase.y - nextEnemy.y;
           if (nextEnemy.turnTimer <= 0) {
-            nextEnemy.turnTimer = 900 + Math.random() * 1200;
+            nextEnemy.turnTimer = (900 + Math.random() * 1200) * cityConfig.enemyMoveDelayScale;
             if (Math.random() < 0.7) {
               nextEnemy.dir = Math.abs(toBaseX) > Math.abs(toBaseY) ? (toBaseX > 0 ? 'right' : 'left') : toBaseY > 0 ? 'down' : 'up';
             } else {
@@ -4165,8 +4342,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             }
             nextEnemy.moveTimer = nextEnemy.stepDelay * cityTerrainSpeed(nextEnemy.x, nextEnemy.y, currentTiles);
           }
-          nextEnemy.cooldown -= dt * enemyPace;
-          if (nextEnemy.cooldown <= 0) {
+          nextEnemy.cooldown -= jammed ? 0 : dt * enemyPace;
+          if (!jammed && nextEnemy.cooldown <= 0) {
             const aimAtBase = Math.random() < 0.62;
             if (aimAtBase) {
               nextEnemy.dir = Math.abs(toBaseX) > Math.abs(toBaseY) ? (toBaseX > 0 ? 'right' : 'left') : toBaseY > 0 ? 'down' : 'up';
@@ -4177,11 +4354,11 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
               side: 'enemy',
               x: nextEnemy.x + vector.x * cityCellSize * 0.62,
               y: nextEnemy.y + vector.y * cityCellSize * 0.62,
-              vx: vector.x * 0.033,
-              vy: vector.y * 0.033,
+              vx: vector.x * cityConfig.enemyShotSpeed,
+              vy: vector.y * cityConfig.enemyShotSpeed,
               dir: nextEnemy.dir,
             });
-            nextEnemy.cooldown = 1900 + Math.random() * 1100;
+            nextEnemy.cooldown = (1900 + Math.random() * 1100) * cityConfig.enemyShotDelayScale;
           }
           movedEnemies.push(nextEnemy);
           return nextEnemy;
@@ -4236,7 +4413,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
               target.hp -= 1;
               if (target.hp <= 0) {
                 nextKills += 1;
-                if (Math.random() < 0.42) {
+                if (Math.random() < cityConfig.dropChance) {
                   nextPowerups = [
                     ...nextPowerups,
                     {
@@ -4246,7 +4423,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
                       y: target.y,
                       expiresAt: time + 11000,
                     },
-                  ].slice(-4);
+                  ].slice(-6);
                 }
               }
               if (!moved.piercing) return;
@@ -4273,15 +4450,14 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
 
         nextEnemies = nextEnemies.filter((enemy) => enemy.hp > 0);
         nextPowerups = nextPowerups.filter((powerup) => {
-          if (Math.hypot(currentPlayer.x - powerup.x, currentPlayer.y - powerup.y) >= cityCellSize * 1.24) return true;
+          const collectRadius = magnet ? cityCellSize * 2.9 : cityCellSize * 1.24;
+          if (Math.hypot(currentPlayer.x - powerup.x, currentPlayer.y - powerup.y) >= collectRadius) return true;
           if (powerup.kind === 'speed') {
-            rapidUntilRef.current = time + 7000;
-            setRapidUntil(time + 7000);
+            extendCityAbility('rapid', time, 7000, 14000);
             showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'shield') {
-            shieldUntilRef.current = time + 6000;
-            setShieldUntil(time + 6000);
+            extendCityAbility('shield', time, 6000, 12000);
             showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'armor') {
@@ -4293,8 +4469,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'freeze') {
-            freezeUntilRef.current = time + 6500;
-            setFreezeUntil(time + 6500);
+            extendCityAbility('freeze', time, 6500, 11000);
             showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'blast') {
@@ -4310,8 +4485,28 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'pierce') {
-            pierceUntilRef.current = time + 8000;
-            setPierceUntil(time + 8000);
+            extendCityAbility('pierce', time, 8000, 13000);
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
+          }
+          if (powerup.kind === 'spread') {
+            extendCityAbility('spread', time, 6200, 9000);
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
+          }
+          if (powerup.kind === 'double') {
+            extendCityAbility('double', time, 8500, 13000);
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
+          }
+          if (powerup.kind === 'magnet') {
+            extendCityAbility('magnet', time, 9000, 14000);
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
+          }
+          if (powerup.kind === 'dash') {
+            extendCityAbility('dash', time, 7500, 12000);
+            showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
+          }
+          if (powerup.kind === 'jam') {
+            extendCityAbility('jam', time, 6500, 10000);
+            nextShots = nextShots.filter((shot) => shot.side === 'ally');
             showCityNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           }
           if (powerup.kind === 'repair') {
@@ -4350,13 +4545,28 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
         setKills(nextKills);
 
         if (nextBaseHp <= 0 || nextArmor <= 0) {
+          const remainingAbilities = readCityAbilityDurations(time);
+          bankedAbilitiesRef.current = (Object.keys(remainingAbilities) as CityTimedAbility[]).reduce((banked, ability) => {
+            banked[ability] = remainingAbilities[ability] / 2;
+            return banked;
+          }, cityEmptyAbilityDurations());
+          applyCityAbilityDurations(cityEmptyAbilityDurations(), time);
           statusRef.current = 'lost';
           setStatus('lost');
-          showCityNotice('damage', nextBaseHp <= 0 ? '主堡失守' : '裝甲破裂');
-        } else if (nextKills >= cityTargetKills) {
-          statusRef.current = 'won';
-          setStatus('won');
-          showCityNotice('spawn', '城市守住');
+          showCityNotice('damage', nextBaseHp <= 0 ? '主堡失守，能力減半' : '裝甲破裂，能力減半');
+        } else if (nextKills >= cityConfig.targetKills) {
+          const remainingAbilities = readCityAbilityDurations(time);
+          if (cityLevelRef.current < cityMaxLevel) {
+            const nextLevel = cityLevelRef.current + 1;
+            startCityLevel(nextLevel, {
+              abilityDurations: remainingAbilities,
+              notice: `${cityLevelConfig(nextLevel).title}展開`,
+            });
+          } else {
+            statusRef.current = 'won';
+            setStatus('won');
+            showCityNotice('spawn', '三重防線守住');
+          }
         }
       }
 
@@ -4366,7 +4576,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [movePlayerIntent, showCityNotice]);
+  }, [applyCityAbilityDurations, extendCityAbility, movePlayerIntent, readCityAbilityDurations, showCityNotice, startCityLevel]);
 
   const cityCellPx = Math.max(18, Math.min((arenaSize.width || 360) / cityViewCols, (arenaSize.height || 520) / cityViewRows));
   const cityViewportWidthPx = cityCellPx * cityViewCols;
@@ -4386,10 +4596,17 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     ['--city-powerup-size' as string]: `${cityCellSize * 1.12}%`,
   };
   const playerHidden = citySeaweedCover(visualPlayer.x, visualPlayer.y, tiles);
-  const shielded = shieldUntil > performance.now();
-  const rapid = rapidUntil > performance.now();
-  const piercing = pierceUntil > performance.now();
-  const enemiesFrozen = freezeUntil > performance.now();
+  const cityRenderTime = performance.now();
+  const currentCityConfig = cityLevelConfig(cityLevel);
+  const shielded = shieldUntil > cityRenderTime;
+  const rapid = rapidUntil > cityRenderTime;
+  const piercing = pierceUntil > cityRenderTime;
+  const spreadActive = spreadUntil > cityRenderTime;
+  const doubleActive = doubleUntil > cityRenderTime;
+  const magnetActive = magnetUntil > cityRenderTime;
+  const dashActive = dashUntil > cityRenderTime;
+  const enemiesFrozen = freezeUntil > cityRenderTime;
+  const enemiesJammed = jamUntil > cityRenderTime;
   const cityPadStickStyle: CSSProperties = {
     ['--pad-x' as string]: `${padVector.x}px`,
     ['--pad-y' as string]: `${padVector.y}px`,
@@ -4436,25 +4653,26 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
               </div>
             ))}
             {visualEnemies.map((enemy) => (
-              <div className={`city-unit enemy dir-${enemy.dir} ${citySeaweedCover(enemy.x, enemy.y, tiles) ? 'hidden' : ''} ${enemiesFrozen ? 'frozen' : ''}`} key={enemy.id} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }}>
+              <div className={`city-unit enemy dir-${enemy.dir} ${citySeaweedCover(enemy.x, enemy.y, tiles) ? 'hidden' : ''} ${enemiesFrozen ? 'frozen' : ''} ${enemiesJammed ? 'jammed' : ''}`} key={enemy.id} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }}>
                 <img src={assets.cityUnits.enemy[enemy.dir]} alt="" />
                 <i style={{ width: `${enemy.hp * 50}%` }} />
               </div>
             ))}
-            <div className={`city-unit player dir-${visualPlayer.dir} ${playerHidden ? 'hidden' : ''} ${shielded ? 'shielded' : ''} ${rapid ? 'rapid' : ''} ${piercing ? 'piercing' : ''}`} style={{ left: `${visualPlayer.x}%`, top: `${visualPlayer.y}%` }}>
+            <div className={`city-unit player dir-${visualPlayer.dir} ${playerHidden ? 'hidden' : ''} ${shielded ? 'shielded' : ''} ${rapid ? 'rapid' : ''} ${piercing ? 'piercing' : ''} ${spreadActive ? 'spread' : ''} ${doubleActive ? 'double' : ''} ${magnetActive ? 'magnet' : ''} ${dashActive ? 'dash' : ''}`} style={{ left: `${visualPlayer.x}%`, top: `${visualPlayer.y}%` }}>
               <img src={assets.cityUnits.player[visualPlayer.dir]} alt="" />
             </div>
             {shots.map((shot) => (
-              <span className={`city-shot ${shot.side} dir-${shot.dir} ${shot.piercing ? 'piercing' : ''}`} key={shot.id} style={{ left: `${shot.x}%`, top: `${shot.y}%` }} />
+              <span className={`city-shot ${shot.side} dir-${shot.dir} ${shot.piercing ? 'piercing' : ''} ${shot.spread ? 'spread' : ''} ${shot.double ? 'double' : ''}`} key={shot.id} style={{ left: `${shot.x}%`, top: `${shot.y}%` }} />
             ))}
             {tiles.filter((tile) => tile.kind === 'seaweed').map((tile) => (
               <span className="city-seaweed-cover" key={`cover-${tile.id}`} style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.size}%`, height: `${tile.size}%` }} />
             ))}
           </div>
           <div className="city-hud">
+            <span>{currentCityConfig.title}</span>
             <span>主堡 {baseHp}/{cityMaxHp}</span>
             <span>裝甲 {armor}/{cityMaxHp}</span>
-            <span>擊破 {kills}/{cityTargetKills}</span>
+            <span>擊破 {kills}/{currentCityConfig.targetKills}</span>
           </div>
           {notice && (
             <div className={`city-notice ${notice.kind}`} key={notice.id}>
@@ -4504,8 +4722,8 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
           </button>
           {status !== 'playing' && (
             <div className="city-result">
-              <strong>{status === 'won' ? '城市守住' : '防線失守'}</strong>
-              <button onClick={restart}>{status === 'won' ? '再守一次' : '重新布防'}</button>
+              <strong>{status === 'won' ? '三重防線完成' : '防線失守'}</strong>
+              <button onClick={status === 'won' ? restart : continueCity}>{status === 'won' ? '再守一次' : '半能量續戰'}</button>
             </div>
           )}
         </div>
