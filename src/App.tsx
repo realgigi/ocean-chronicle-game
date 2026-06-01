@@ -223,7 +223,7 @@ type CityNotice = {
   text: string;
 };
 
-type LightBombTileKind = 'solid' | 'soft' | 'rubble' | 'current';
+type LightBombTileKind = 'solid' | 'soft' | 'rubble' | 'current' | 'kelp' | 'vent' | 'shell';
 type LightBombTile = {
   id: number;
   kind: LightBombTileKind;
@@ -299,6 +299,14 @@ type LightBombPadIntent = {
   primary: CityDirection;
   secondary?: CityDirection;
 } | null;
+type LightBombPadVector = {
+  x: number;
+  y: number;
+};
+type LightBombPadInput = {
+  intent: LightBombPadIntent;
+  vector: LightBombPadVector;
+};
 type BreakoutPowerupKind = 'split2' | 'gun' | 'split5' | 'giant' | 'grow' | 'wide' | 'narrow';
 
 type BreakoutPowerup = {
@@ -747,6 +755,7 @@ const lightBombCols = 31;
 const lightBombViewRows = 17;
 const lightBombViewCols = 10;
 const lightBombKickStepMs = 82;
+const lightBombEnemyCount = 20;
 const lightBombPlayerStart: LightBombPlayer = {
   row: 1,
   col: 1,
@@ -777,11 +786,12 @@ const lightBombPowerupText: Record<LightBombPowerupKind, string> = {
   shield: '護盾展開',
 };
 const lightBombEnemyDelays: Record<LightBombEnemyKind, number> = {
-  squid: 520,
-  urchin: 430,
-  anemone: 690,
+  squid: 650,
+  urchin: 560,
+  anemone: 780,
 };
 const lightBombDirections: CityDirection[] = ['up', 'down', 'left', 'right'];
+const lightBombEnemyPattern: LightBombEnemyKind[] = ['squid', 'urchin', 'anemone', 'squid', 'urchin', 'anemone', 'squid', 'urchin', 'squid', 'anemone'];
 
 function sameCell(a: SnakeCell, b: SnakeCell) {
   return a.row === b.row && a.col === b.col;
@@ -1172,6 +1182,11 @@ function createLightBombEnemy(id: number, kind: LightBombEnemyKind, row: number,
   };
 }
 
+function lightBombPadVectorFromDirection(direction: CityDirection): LightBombPadVector {
+  const vector = cityDirectionVector(direction);
+  return { x: vector.x * 31, y: vector.y * 31 };
+}
+
 function createLightBombLevel(): LightBombLevel {
   const tiles: LightBombTile[] = [];
   const occupied = new Set<string>();
@@ -1207,16 +1222,19 @@ function createLightBombLevel(): LightBombLevel {
   }
 
   lightBombShuffle(openCells)
-    .slice(0, 46)
+    .slice(0, 82)
     .forEach((cell) => {
-      if (!lightBombProtected(cell.row, cell.col)) addTile(Math.random() < 0.74 ? 'rubble' : 'current', cell.row, cell.col);
+      if (lightBombProtected(cell.row, cell.col)) return;
+      const roll = Math.random();
+      const kind: LightBombTileKind = roll < 0.32 ? 'rubble' : roll < 0.55 ? 'kelp' : roll < 0.76 ? 'current' : roll < 0.9 ? 'vent' : 'shell';
+      addTile(kind, cell.row, cell.col);
     });
 
   const farSoft = lightBombShuffle(softCells.filter((cell) => cell.row + cell.col > 20));
   const exit = farSoft[0] ?? { row: lightBombRows - 2, col: lightBombCols - 2 };
-  const powerupKinds: LightBombPowerupKind[] = ['flame', 'flame', 'bomb', 'bomb', 'speed', 'speed', 'kick', 'remote', 'shield'];
+  const powerupKinds: LightBombPowerupKind[] = ['flame', 'flame', 'bomb', 'bomb', 'speed', 'speed', 'kick', 'remote', 'shield', 'flame', 'bomb', 'shield'];
   const hiddenPowerups = lightBombShuffle(softCells.filter((cell) => lightBombKey(cell.row, cell.col) !== lightBombKey(exit.row, exit.col)))
-    .slice(0, 18)
+    .slice(0, 24)
     .map((cell, index) => ({
       id: index + 1,
       row: cell.row,
@@ -1224,9 +1242,8 @@ function createLightBombLevel(): LightBombLevel {
       kind: powerupKinds[index % powerupKinds.length],
     }));
 
-  const spawnCells = lightBombShuffle(openCells.filter((cell) => Math.abs(cell.row - 1) + Math.abs(cell.col - 1) > 14)).slice(0, 10);
-  const enemyKinds: LightBombEnemyKind[] = ['squid', 'urchin', 'anemone', 'squid', 'urchin', 'anemone', 'squid', 'urchin', 'squid', 'anemone'];
-  const enemies = spawnCells.map((cell, index) => createLightBombEnemy(100 + index, enemyKinds[index % enemyKinds.length], cell.row, cell.col));
+  const spawnCells = lightBombShuffle(openCells.filter((cell) => Math.abs(cell.row - 1) + Math.abs(cell.col - 1) > 14)).slice(0, lightBombEnemyCount);
+  const enemies = spawnCells.map((cell, index) => createLightBombEnemy(100 + index, lightBombEnemyPattern[index % lightBombEnemyPattern.length], cell.row, cell.col));
 
   return { tiles, hiddenPowerups, enemies, exit };
 }
@@ -4267,6 +4284,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
   const [exitVisible, setExitVisible] = useState(false);
   const [status, setStatus] = useState<LightBombStatus>('playing');
   const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
+  const [padVector, setPadVector] = useState<LightBombPadVector>({ x: 0, y: 0 });
   const [notice, setNotice] = useState<LightBombNotice>(null);
 
   const showNotice = useCallback((kind: NonNullable<LightBombNotice>['kind'], text: string) => {
@@ -4301,6 +4319,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     setExitVisible(false);
     setStatus('playing');
     setPadDirection(null);
+    setPadVector({ x: 0, y: 0 });
     showNotice('door', '新迷宮');
   }, [showNotice]);
 
@@ -4400,20 +4419,27 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     playGameSfx('bomb');
   }, []);
 
-  const intentFromPad = useCallback((clientX: number, clientY: number, target: HTMLElement): LightBombPadIntent => {
+  const inputFromPad = useCallback((clientX: number, clientY: number, target: HTMLElement): LightBombPadInput => {
     const rect = target.getBoundingClientRect();
     const dx = clientX - (rect.left + rect.width / 2);
     const dy = clientY - (rect.top + rect.height / 2);
-    if (Math.hypot(dx, dy) < Math.min(rect.width, rect.height) * 0.16) return null;
+    const size = Math.min(rect.width, rect.height);
+    const distance = Math.hypot(dx, dy);
+    if (distance < size * 0.13) return { intent: null, vector: { x: 0, y: 0 } };
+    const maxOffset = size * 0.28;
+    const vectorScale = distance > maxOffset ? maxOffset / distance : 1;
+    const vector = { x: dx * vectorScale, y: dy * vectorScale };
     const horizontal: CityDirection = dx > 0 ? 'right' : 'left';
     const vertical: CityDirection = dy > 0 ? 'down' : 'up';
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
-    if (absX > absY * 1.8) return { primary: horizontal };
-    if (absY > absX * 1.8) return { primary: vertical };
-    return absX >= absY
+    let intent: LightBombPadIntent;
+    if (absX > absY * 1.8) intent = { primary: horizontal };
+    else if (absY > absX * 1.8) intent = { primary: vertical };
+    else intent = absX >= absY
       ? { primary: horizontal, secondary: vertical }
       : { primary: vertical, secondary: horizontal };
+    return { intent, vector };
   }, []);
 
   const tryMoveIntent = useCallback((intent: LightBombPadIntent) => {
@@ -4422,16 +4448,18 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
     if (intent.secondary) tryMovePlayer(intent.secondary);
   }, [tryMovePlayer]);
 
-  const holdDirection = useCallback((intent: LightBombPadIntent) => {
+  const holdDirection = useCallback((intent: LightBombPadIntent, vector: LightBombPadVector = { x: 0, y: 0 }) => {
     heldDirectionRef.current = intent;
     setPadDirection(intent?.primary ?? null);
+    setPadVector(intent ? vector : { x: 0, y: 0 });
     tryMoveIntent(intent);
   }, [tryMoveIntent]);
 
   const updatePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
-    holdDirection(intentFromPad(event.clientX, event.clientY, event.currentTarget));
-  }, [intentFromPad, holdDirection]);
+    const input = inputFromPad(event.clientX, event.clientY, event.currentTarget);
+    holdDirection(input.intent, input.vector);
+  }, [inputFromPad, holdDirection]);
 
   const releasePad = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
     if (event && movePointerRef.current !== null && movePointerRef.current !== event.pointerId) return;
@@ -4444,7 +4472,7 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
       const key = event.key.toLowerCase();
       const direction = event.key === 'ArrowUp' || key === 'w' ? 'up' : event.key === 'ArrowDown' || key === 's' ? 'down' : event.key === 'ArrowLeft' || key === 'a' ? 'left' : event.key === 'ArrowRight' || key === 'd' ? 'right' : null;
       if (direction) {
-        holdDirection({ primary: direction });
+        holdDirection({ primary: direction }, lightBombPadVectorFromDirection(direction));
         event.preventDefault();
       }
       if (event.key === ' ' || key === 'j' || key === 'k') {
@@ -4667,6 +4695,10 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
   };
   const shielded = player.shieldUntil > performance.now();
   const remote = player.remoteUntil > performance.now();
+  const padStickStyle: CSSProperties = {
+    ['--pad-x' as string]: `${padVector.x}px`,
+    ['--pad-y' as string]: `${padVector.y}px`,
+  };
 
   return (
     <section className="screen lightbomb-screen">
@@ -4723,10 +4755,12 @@ function LightBombMazeGame({ onBack }: { onBack: () => void }) {
             onPointerCancel={releasePad}
             onLostPointerCapture={releasePad}
           >
-            <button type="button" tabIndex={-1} aria-label="向上"><ChevronUp size={18} /></button>
-            <button type="button" tabIndex={-1} aria-label="向左"><ChevronLeft size={18} /></button>
-            <button type="button" tabIndex={-1} aria-label="向右"><ChevronRight size={18} /></button>
-            <button type="button" tabIndex={-1} aria-label="向下"><ChevronDown size={18} /></button>
+            <span className="lightbomb-stick-base" />
+            <span className="lightbomb-stick-arrow up"><ChevronUp size={14} /></span>
+            <span className="lightbomb-stick-arrow left"><ChevronLeft size={14} /></span>
+            <span className="lightbomb-stick-arrow right"><ChevronRight size={14} /></span>
+            <span className="lightbomb-stick-arrow down"><ChevronDown size={14} /></span>
+            <span className="lightbomb-stick" style={padStickStyle} />
           </div>
           <button className={`lightbomb-action ${remote ? 'remote' : ''}`} onClick={placeOrTriggerBomb} aria-label="放置海光爆彈">
             <Sparkles size={24} />

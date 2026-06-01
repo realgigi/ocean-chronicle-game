@@ -3102,8 +3102,8 @@ button:disabled {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   background:
-    radial-gradient(circle at 50% 0%, rgba(255, 214, 91, 0.16), transparent 30%),
-    linear-gradient(180deg, #061827 0%, #123239 48%, #050d17 100%);
+    linear-gradient(160deg, rgba(93, 47, 117, 0.22), transparent 34%),
+    linear-gradient(180deg, #061a27 0%, #123c43 48%, #040b15 100%);
 }
 
 .lightbomb-screen::before {
@@ -3111,9 +3111,8 @@ button:disabled {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 18% 22%, rgba(96, 233, 228, 0.13), transparent 22%),
-    radial-gradient(circle at 82% 70%, rgba(255, 191, 86, 0.12), transparent 24%),
-    repeating-linear-gradient(90deg, rgba(216, 247, 255, 0.04) 0 1px, transparent 1px 48px);
+    linear-gradient(115deg, transparent 0 18%, rgba(94, 231, 229, 0.08) 19% 20%, transparent 21% 46%, rgba(255, 209, 105, 0.07) 47% 48%, transparent 49%),
+    repeating-linear-gradient(90deg, rgba(216, 247, 255, 0.035) 0 1px, transparent 1px 48px);
   pointer-events: none;
 }
 
@@ -3159,8 +3158,8 @@ button:disabled {
   overflow: hidden;
   border-radius: 4px;
   background:
-    radial-gradient(circle at 50% 50%, rgba(99, 210, 198, 0.18), transparent 32%),
-    linear-gradient(180deg, rgba(8, 42, 46, 0.98), rgba(4, 14, 22, 0.99));
+    linear-gradient(135deg, rgba(131, 83, 173, 0.13), transparent 38%),
+    linear-gradient(180deg, rgba(7, 50, 54, 0.99), rgba(4, 13, 23, 0.99));
   box-shadow:
     inset 0 0 0 1px rgba(184, 238, 240, 0.22),
     0 12px 28px rgba(0, 0, 0, 0.28);
@@ -3172,59 +3171,154 @@ button:disabled {
   top: 0;
   will-change: transform;
   background:
-    radial-gradient(circle at 18% 24%, rgba(255, 224, 112, 0.09), transparent 15%),
-    radial-gradient(circle at 78% 72%, rgba(128, 234, 229, 0.09), transparent 18%),
-    repeating-linear-gradient(90deg, rgba(213, 248, 246, 0.06) 0 1px, transparent 1px calc(100% / 31)),
-    repeating-linear-gradient(0deg, rgba(213, 248, 246, 0.055) 0 1px, transparent 1px calc(100% / 31)),
-    linear-gradient(180deg, rgba(12, 58, 58, 0.98), rgba(6, 28, 40, 0.98));
+    linear-gradient(120deg, rgba(255, 222, 110, 0.08), transparent 24%, rgba(114, 231, 235, 0.08) 58%, transparent 78%),
+    repeating-linear-gradient(90deg, rgba(213, 248, 246, 0.055) 0 1px, transparent 1px calc(100% / 31)),
+    repeating-linear-gradient(0deg, rgba(213, 248, 246, 0.05) 0 1px, transparent 1px calc(100% / 31)),
+    linear-gradient(180deg, rgba(11, 59, 61, 0.98), rgba(6, 27, 43, 0.98));
 }
 
 .lightbomb-tile {
   position: absolute;
+  overflow: hidden;
   border-radius: 3px;
+}
+
+.lightbomb-tile::before,
+.lightbomb-tile::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
 }
 
 .lightbomb-tile.solid {
   z-index: 4;
-  transform: scale(0.9);
+  transform: scale(0.92);
+  border-radius: 6px;
   background:
-    radial-gradient(circle at 33% 25%, rgba(255, 255, 255, 0.22), transparent 32%),
-    linear-gradient(135deg, rgba(116, 149, 154, 0.98), rgba(34, 62, 79, 0.98));
+    linear-gradient(90deg, rgba(255, 231, 139, 0.26) 0 8%, transparent 9% 91%, rgba(255, 231, 139, 0.24) 92%),
+    linear-gradient(180deg, rgba(160, 209, 205, 0.98), rgba(49, 90, 105, 0.98) 52%, rgba(25, 45, 66, 0.98));
   box-shadow:
-    inset 0 0 0 1px rgba(226, 251, 249, 0.22),
-    inset 0 -9px 16px rgba(0, 0, 0, 0.3),
-    0 5px 12px rgba(0, 0, 0, 0.24);
+    inset 0 0 0 1px rgba(226, 251, 249, 0.28),
+    inset 0 -10px 16px rgba(0, 0, 0, 0.32),
+    0 5px 12px rgba(0, 0, 0, 0.26);
+}
+
+.lightbomb-tile.solid::before {
+  inset: 20% 20% 24%;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 231, 139, 0.38);
+  box-shadow: inset 0 0 12px rgba(99, 231, 233, 0.16);
+}
+
+.lightbomb-tile.solid::after {
+  left: 22%;
+  right: 22%;
+  bottom: 17%;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 230, 130, 0.48);
 }
 
 .lightbomb-tile.soft {
   z-index: 3;
   transform: scale(0.9);
+  border-radius: 7px;
   background:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 1px, transparent 1px 50%),
-    radial-gradient(circle at 32% 25%, rgba(255, 221, 128, 0.28), transparent 36%),
-    linear-gradient(180deg, rgba(102, 103, 125, 0.96), rgba(69, 40, 83, 0.98));
+    repeating-linear-gradient(135deg, rgba(255, 240, 159, 0.14) 0 3px, transparent 3px 8px),
+    linear-gradient(180deg, rgba(188, 89, 142, 0.96), rgba(82, 42, 101, 0.98) 58%, rgba(38, 44, 86, 0.98));
   box-shadow:
-    inset 0 0 0 1px rgba(249, 225, 164, 0.26),
-    inset 0 -7px 14px rgba(0, 0, 0, 0.28),
-    0 5px 10px rgba(0, 0, 0, 0.22);
+    inset 0 0 0 1px rgba(255, 226, 159, 0.34),
+    inset 0 -7px 14px rgba(0, 0, 0, 0.3),
+    0 5px 10px rgba(0, 0, 0, 0.24);
+}
+
+.lightbomb-tile.soft::before {
+  left: 16%;
+  top: 18%;
+  width: 26%;
+  height: 34%;
+  border-radius: 50% 50% 45% 45%;
+  background: rgba(247, 141, 187, 0.76);
+  box-shadow:
+    12px 5px 0 rgba(235, 111, 172, 0.58),
+    5px 14px 0 rgba(255, 202, 119, 0.45);
+}
+
+.lightbomb-tile.soft::after {
+  right: 12%;
+  bottom: 12%;
+  width: 44%;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(112, 235, 237, 0.35);
 }
 
 .lightbomb-tile.rubble {
   z-index: 1;
-  transform: scale(0.7);
+  transform: scale(0.66);
+  border-radius: 44% 56% 48% 52%;
   background:
-    radial-gradient(circle at 38% 32%, rgba(215, 244, 235, 0.2), transparent 36%),
-    linear-gradient(135deg, rgba(109, 127, 130, 0.32), rgba(22, 50, 64, 0.24));
-  opacity: 0.56;
+    linear-gradient(135deg, rgba(186, 210, 202, 0.46), rgba(46, 79, 90, 0.35));
+  opacity: 0.62;
 }
 
 .lightbomb-tile.current {
   z-index: 1;
   border-radius: 0;
   background:
-    linear-gradient(90deg, transparent, rgba(110, 236, 241, 0.18), transparent),
-    repeating-linear-gradient(90deg, rgba(120, 236, 239, 0.18) 0 7px, rgba(29, 103, 114, 0.12) 8px 14px);
+    linear-gradient(90deg, transparent, rgba(125, 241, 245, 0.24), transparent),
+    repeating-linear-gradient(90deg, rgba(120, 236, 239, 0.22) 0 7px, rgba(29, 103, 114, 0.1) 8px 14px);
   opacity: 0.7;
+}
+
+.lightbomb-tile.kelp {
+  z-index: 2;
+  transform: scale(0.86);
+  border-radius: 999px 999px 4px 4px;
+  background:
+    linear-gradient(90deg, transparent 0 28%, rgba(94, 228, 170, 0.42) 29% 39%, transparent 40% 56%, rgba(61, 193, 139, 0.48) 57% 68%, transparent 69%),
+    linear-gradient(180deg, transparent, rgba(44, 126, 102, 0.34));
+  opacity: 0.76;
+}
+
+.lightbomb-tile.kelp::before {
+  left: 21%;
+  bottom: 10%;
+  width: 18%;
+  height: 78%;
+  border-radius: 999px 999px 5px 5px;
+  background: linear-gradient(180deg, rgba(144, 249, 201, 0.78), rgba(23, 121, 99, 0.2));
+  transform: rotate(-12deg);
+}
+
+.lightbomb-tile.kelp::after {
+  right: 23%;
+  bottom: 8%;
+  width: 17%;
+  height: 66%;
+  border-radius: 999px 999px 5px 5px;
+  background: linear-gradient(180deg, rgba(99, 238, 177, 0.72), rgba(18, 103, 89, 0.2));
+  transform: rotate(13deg);
+}
+
+.lightbomb-tile.vent {
+  z-index: 1;
+  transform: scale(0.72);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(207, 251, 255, 0.68) 0 10%, transparent 11% 26%, rgba(87, 218, 224, 0.18) 27% 44%, transparent 45%),
+    radial-gradient(circle, rgba(24, 80, 89, 0.68), rgba(5, 24, 38, 0.06));
+  opacity: 0.82;
+}
+
+.lightbomb-tile.shell {
+  z-index: 1;
+  transform: scale(0.58) rotate(-18deg);
+  border-radius: 60% 40% 55% 45%;
+  background:
+    linear-gradient(135deg, rgba(255, 239, 171, 0.82), rgba(121, 233, 239, 0.34) 52%, rgba(147, 84, 177, 0.24));
+  box-shadow: 0 0 10px rgba(255, 226, 131, 0.32);
+  opacity: 0.78;
 }
 
 .lightbomb-player,
@@ -3421,72 +3515,98 @@ button:disabled {
 .lightbomb-controls {
   position: absolute;
   z-index: 22;
-  left: 6px;
-  bottom: 6px;
-  display: grid;
-  width: 116px;
-  height: 116px;
-  grid-template-columns: repeat(3, 34px);
-  grid-template-rows: repeat(3, 34px);
-  align-content: center;
-  justify-content: center;
-  gap: 4px;
+  left: 8px;
+  bottom: 10px;
+  width: 124px;
+  height: 124px;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 230, 132, 0.22) 0 21%, transparent 22%),
-    radial-gradient(circle at 50% 50%, rgba(18, 73, 77, 0.84), rgba(4, 22, 39, 0.74) 66%, rgba(6, 17, 31, 0.42) 72%);
+    radial-gradient(circle at 50% 50%, rgba(255, 230, 132, 0.22) 0 17%, transparent 18% 38%, rgba(102, 229, 235, 0.12) 39% 43%, transparent 44%),
+    radial-gradient(circle at 50% 52%, rgba(16, 75, 80, 0.82), rgba(4, 22, 39, 0.74) 68%, rgba(6, 17, 31, 0.36) 72%);
   box-shadow:
-    inset 0 0 0 1px rgba(178, 232, 244, 0.22),
-    0 12px 24px rgba(0, 0, 0, 0.3);
+    inset 0 0 0 1px rgba(178, 232, 244, 0.24),
+    inset 0 0 22px rgba(103, 235, 238, 0.1),
+    0 12px 24px rgba(0, 0, 0, 0.32);
   touch-action: none;
   user-select: none;
 }
 
-.lightbomb-controls button,
-.lightbomb-action {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border-radius: 8px;
-  color: #eafcff;
-  background: rgba(5, 26, 41, 0.78);
-  box-shadow:
-    inset 0 0 0 1px rgba(178, 232, 244, 0.24),
-    0 8px 14px rgba(0, 0, 0, 0.22);
-}
-
-.lightbomb-controls button {
+.lightbomb-stick-base,
+.lightbomb-stick,
+.lightbomb-stick-arrow {
+  position: absolute;
   pointer-events: none;
 }
 
-.lightbomb-controls button:first-child {
-  grid-column: 2;
-  grid-row: 1;
+.lightbomb-stick-base {
+  inset: 23px;
+  border-radius: 50%;
+  background:
+    linear-gradient(135deg, rgba(255, 232, 128, 0.12), transparent 45%),
+    rgba(5, 28, 43, 0.54);
+  box-shadow:
+    inset 0 0 0 1px rgba(185, 236, 244, 0.22),
+    inset 0 0 18px rgba(0, 0, 0, 0.22);
 }
 
-.lightbomb-controls button:nth-child(2) {
-  grid-column: 1;
-  grid-row: 2;
+.lightbomb-stick {
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 27%, rgba(255, 255, 255, 0.9), transparent 22%),
+    linear-gradient(135deg, rgba(255, 231, 127, 0.98), rgba(92, 229, 235, 0.94));
+  box-shadow:
+    0 8px 16px rgba(0, 0, 0, 0.34),
+    0 0 0 2px rgba(255, 232, 130, 0.26),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.46);
+  transform: translate(calc(-50% + var(--pad-x, 0px)), calc(-50% + var(--pad-y, 0px)));
+  transition: transform 70ms linear;
 }
 
-.lightbomb-controls button:nth-child(3) {
-  grid-column: 3;
-  grid-row: 2;
+.lightbomb-controls.active-up .lightbomb-stick,
+.lightbomb-controls.active-left .lightbomb-stick,
+.lightbomb-controls.active-right .lightbomb-stick,
+.lightbomb-controls.active-down .lightbomb-stick {
+  box-shadow:
+    0 8px 16px rgba(0, 0, 0, 0.36),
+    0 0 18px rgba(111, 236, 244, 0.54),
+    0 0 0 2px rgba(255, 232, 130, 0.32),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.48);
 }
 
-.lightbomb-controls button:nth-child(4) {
-  grid-column: 2;
-  grid-row: 3;
+.lightbomb-stick-arrow {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: rgba(231, 254, 255, 0.72);
 }
 
-.lightbomb-controls.active-up button:first-child,
-.lightbomb-controls.active-left button:nth-child(2),
-.lightbomb-controls.active-right button:nth-child(3),
-.lightbomb-controls.active-down button:nth-child(4) {
-  color: #092130;
-  background: linear-gradient(180deg, rgba(255, 236, 138, 0.98), rgba(83, 222, 232, 0.94));
+.lightbomb-stick-arrow.up {
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.lightbomb-stick-arrow.down {
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.lightbomb-stick-arrow.left {
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.lightbomb-stick-arrow.right {
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .lightbomb-action {
@@ -3496,6 +3616,9 @@ button:disabled {
   bottom: 24px;
   width: 76px;
   height: 76px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border-radius: 50%;
   color: #1e1607;
   background:
