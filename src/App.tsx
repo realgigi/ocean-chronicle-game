@@ -738,7 +738,7 @@ const cityViewWidth = cityCellSize * cityViewCols;
 const cityViewHeight = cityCellSize * cityViewRows;
 const cityUnitSize = cityCellSize * 0.74;
 const cityUnitVisualSize = cityCellSize * 1.02;
-const cityPlayerStepDelayMs = 240;
+const cityPlayerStepDelayMs = 178;
 const cityStartingBaseHp = 4;
 const cityStartingArmor = 4;
 const cityMaxHp = 5;
@@ -1183,7 +1183,7 @@ function cityTerrainSpeed(x: number, y: number, tiles: CityTile[]) {
 }
 
 function cityVisualStep(value: number, target: number, dt: number) {
-  return cityApproach(value, target, (cityCellSize * dt) / 150);
+  return cityApproach(value, target, (cityCellSize * dt) / cityPlayerStepDelayMs);
 }
 
 function citySmoothVisual<T extends { x: number; y: number }>(previous: T | undefined, target: T, dt: number): T {
@@ -1345,24 +1345,39 @@ function wrapSnakeCell(cell: SnakeCell): SnakeCell {
   };
 }
 
+function randomSnakeVisibleCell(snake: SnakeCell[], margin = 1): SnakeCell {
+  const head = snake[0] ?? snakeStart[0];
+  const halfCols = Math.floor(snakeViewCols / 2);
+  const halfRows = Math.floor(snakeViewRows / 2);
+  const minCol = clamp(head.col - halfCols + margin, 1, snakeCols - 2);
+  const maxCol = clamp(head.col + halfCols - margin, minCol, snakeCols - 2);
+  const minRow = clamp(head.row - halfRows + margin, 1, snakeRows - 2);
+  const maxRow = clamp(head.row + halfRows - margin, minRow, snakeRows - 2);
+  return {
+    row: randomInt(minRow, maxRow),
+    col: randomInt(minCol, maxCol),
+  };
+}
+
 function placeSnakeFood(snake: SnakeCell[], obstacles: SnakeObstacle[]): SnakeCell {
   for (let attempt = 0; attempt < 80; attempt += 1) {
-    const candidate = { row: randomInt(1, snakeRows - 2), col: randomInt(1, snakeCols - 2) };
+    const candidate = randomSnakeVisibleCell(snake, attempt < 50 ? 1 : 0);
     if (!snake.some((cell) => sameCell(cell, candidate)) && !obstacles.some((cell) => sameCell(cell, candidate))) {
       return candidate;
     }
   }
-  return { row: 4, col: 6 };
+  return randomSnakeVisibleCell(snake, 1);
 }
 
 function createSnakeObstacle(snake: SnakeCell[], food: SnakeCell, obstacles: SnakeObstacle[], powerup: SnakePowerup | null): SnakeObstacle | null {
   const head = snake[0];
 
   for (let attempt = 0; attempt < 80; attempt += 1) {
-    const candidate = { row: randomInt(2, snakeRows - 3), col: randomInt(1, snakeCols - 2) };
-    const tooCloseToHead = Math.abs(candidate.row - head.row) + Math.abs(candidate.col - head.col) < 4;
+    const candidate = randomSnakeVisibleCell(snake, attempt < 50 ? 1 : 0);
+    const distanceToHead = Math.abs(candidate.row - head.row) + Math.abs(candidate.col - head.col);
     const occupied =
-      tooCloseToHead ||
+      distanceToHead < 4 ||
+      distanceToHead > 12 ||
       sameCell(candidate, food) ||
       (powerup ? sameCell(candidate, powerup) : false) ||
       snake.some((cell) => sameCell(cell, candidate)) ||
@@ -1377,13 +1392,13 @@ function createSnakeObstacle(snake: SnakeCell[], food: SnakeCell, obstacles: Sna
 
 function placeSnakePowerup(snake: SnakeCell[], food: SnakeCell, obstacles: SnakeObstacle[]): SnakePowerup {
   for (let attempt = 0; attempt < 80; attempt += 1) {
-    const candidate = { row: randomInt(1, snakeRows - 2), col: randomInt(1, snakeCols - 2) };
+    const candidate = randomSnakeVisibleCell(snake, attempt < 50 ? 1 : 0);
     const occupied = sameCell(candidate, food) || snake.some((cell) => sameCell(cell, candidate)) || obstacles.some((cell) => sameCell(cell, candidate));
     if (!occupied) {
       return { ...candidate, id: Date.now() + attempt, expiresAt: performance.now() + 7000 };
     }
   }
-  return { row: 7, col: 6, id: Date.now(), expiresAt: performance.now() + 7000 };
+  return { ...randomSnakeVisibleCell(snake, 1), id: Date.now(), expiresAt: performance.now() + 7000 };
 }
 
 function chooseTowerPlatformKind(progressMs: number): TowerPlatformKind {
