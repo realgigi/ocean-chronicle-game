@@ -338,11 +338,14 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 10px 12px;
   text-align: left;
 }
 
 .map-node span {
+  min-width: 0;
+  flex: 1 1 auto;
   font-size: 0.98rem;
 }
 
@@ -350,6 +353,22 @@ button:disabled {
   color: #a8dff5;
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.map-node-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 72px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.map-node-meta strong {
+  color: #fff6ad;
+  font-size: 0.82rem;
 }
 
 .map-node.shooter {
@@ -394,6 +413,7 @@ button:disabled {
 
 .map-node.cleared {
   background: linear-gradient(135deg, rgba(44, 146, 107, 0.86), rgba(32, 94, 120, 0.84));
+  box-shadow: inset 0 0 0 1px rgba(242, 236, 166, 0.45), 0 10px 22px rgba(8, 29, 45, 0.22);
 }
 
 .gallery-list {
