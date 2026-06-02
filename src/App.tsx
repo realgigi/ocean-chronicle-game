@@ -117,6 +117,14 @@ type Snowball = {
   vx: number;
   vy: number;
 };
+type SnowBarrier = {
+  id: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  expiresAt: number;
+};
 
 type SnakeCell = {
   row: number;
@@ -1301,8 +1309,8 @@ function directionPadInputFromPointer(clientX: number, clientY: number, target: 
   const dy = clientY - (rect.top + rect.height / 2);
   const size = Math.min(rect.width, rect.height);
   const distance = Math.hypot(dx, dy);
-  if (distance < size * 0.13) return { intent: null, vector: { x: 0, y: 0 } };
-  const maxOffset = size * 0.28;
+  if (distance < size * 0.1) return { intent: null, vector: { x: 0, y: 0 } };
+  const maxOffset = size * 0.31;
   const vectorScale = distance > maxOffset ? maxOffset / distance : 1;
   const vector = { x: dx * vectorScale, y: dy * vectorScale };
   const horizontal: CityDirection = dx > 0 ? 'right' : 'left';
@@ -1837,6 +1845,14 @@ function snakeCameraWithDeadZone(previous: { col: number; row: number }, head: S
   return {
     col: clamp(col, 0, snakeCols - snakeViewCols),
     row: clamp(row, 0, snakeRows - snakeViewRows),
+  };
+}
+
+function snakeSmoothCamera(previous: { col: number; row: number }, head: SnakeCell) {
+  const target = snakeCenteredCamera(head);
+  return {
+    col: clamp(previous.col + (target.col - previous.col) * 0.62, 0, snakeCols - snakeViewCols),
+    row: clamp(previous.row + (target.row - previous.row) * 0.62, 0, snakeRows - snakeViewRows),
   };
 }
 
@@ -2447,8 +2463,10 @@ function MemoryMatchGame({ onBack }: { onBack: () => void }) {
       if (first && second && first.id === second.id) {
         setMatched((items) => [...items, firstId, secondId]);
         setDialogue('算你厲害，這一對被你看穿了。');
+        playGameSfx('powerup');
       } else {
         setDialogue('你是不是記憶不行？再想想剛剛在哪裡。');
+        playGameSfx('hit');
       }
       setFlipped([]);
       setLocked(false);
@@ -2458,6 +2476,7 @@ function MemoryMatchGame({ onBack }: { onBack: () => void }) {
   const flipCard = useCallback(
     (card: MemoryDeckCard) => {
       if (locked || won || matchedSet.has(card.deckId) || flipped.includes(card.deckId) || flipped.length >= 2) return;
+      playGameSfx('select');
       setFlipped((items) => [...items, card.deckId]);
       if (flipped.length === 1) setMoves((value) => value + 1);
     },
@@ -2466,6 +2485,7 @@ function MemoryMatchGame({ onBack }: { onBack: () => void }) {
 
   const useHint = useCallback(() => {
     if (hintUsed || locked || won) return;
+    playGameSfx('powerup');
     const unavailable = new Set([...matched, ...flipped]);
     const hintCards = deck
       .filter((card) => !unavailable.has(card.deckId))
@@ -2482,6 +2502,10 @@ function MemoryMatchGame({ onBack }: { onBack: () => void }) {
       setDialogue('提示結束，現在看你的記憶。');
     }, 2000);
   }, [deck, flipped, hintUsed, locked, matched, won]);
+
+  useEffect(() => {
+    if (won) playGameSfx('door');
+  }, [won]);
 
   return (
     <section className="screen memory-screen">
@@ -2629,6 +2653,7 @@ function IceBreakoutGame({ onBack }: { onBack: () => void }) {
     lastTime.current = null;
     setStatus('playing');
     setDialogue('讓冰晶球穿透污染冰牆。');
+    playGameSfx('select');
   }, []);
 
   const movePaddle = useCallback((clientX: number) => {
@@ -2644,6 +2669,8 @@ function IceBreakoutGame({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     statusRef.current = status;
+    if (status === 'won') playGameSfx('door');
+    if (status === 'lost') playGameSfx('hit');
   }, [status]);
 
   useEffect(() => {
@@ -2838,6 +2865,7 @@ function IceBreakoutGame({ onBack }: { onBack: () => void }) {
           .filter((powerup) => {
             const caught = powerup.y >= paddleY - 2 && powerup.y <= paddleY + 4 && Math.abs(powerup.x - paddleRef.current) <= paddleWidth / 2 + 3;
             if (caught) {
+              playGameSfx(isNegativeBreakoutPowerup(powerup.kind) ? 'hit' : 'powerup');
               if (powerup.kind === 'split2') {
                 const source = nextBalls[0] ?? { id: nextId.current++, x: paddleRef.current, y: 80, vx: 0.012, vy: -0.024, bigHits: 0 };
                 if (nextBalls.length < breakoutMaxBalls) {
@@ -3077,6 +3105,7 @@ function MinefieldGame({ onBack }: { onBack: () => void }) {
       const nextFlagged = !cell.flagged;
       setCells((current) => current.map((item) => (item.id === cell.id ? { ...item, flagged: nextFlagged } : item)));
       setDialogue(nextFlagged ? '長按標記完成。短按仍然可以直接探查。' : '標記取消，暗流繼續觀察。');
+      playGameSfx('select');
     },
     [status],
   );
@@ -3101,6 +3130,7 @@ function MinefieldGame({ onBack }: { onBack: () => void }) {
         setCells(nextCells);
         setStatus('lost');
         setDialogue('踩中黑潮陷阱，這段暗流要重走。');
+        playGameSfx('hit');
         return;
       }
 
@@ -3109,6 +3139,7 @@ function MinefieldGame({ onBack }: { onBack: () => void }) {
       setCells(nextCells);
       setStatus(nextRevealed >= safeCount ? 'won' : 'playing');
       setDialogue(nextRevealed >= safeCount ? '路線清出來了，暗流原野暫時安全。' : currentCell.adjacent === 0 ? '黑豹忍者找到一片乾淨水路。' : `周圍有 ${currentCell.adjacent} 個暗雷。`);
+      playGameSfx(nextRevealed >= safeCount ? 'door' : 'select');
     },
     [cells, mode, safeCount, status, toggleFlag],
   );
@@ -3227,11 +3258,15 @@ function SnowfieldGame({ onBack }: { onBack: () => void }) {
   const rafRef = useRef<number | null>(null);
   const lastTime = useRef<number | null>(null);
   const nextSnowballId = useRef(1);
+  const nextSnowBarrierId = useRef(1);
+  const nextBarrierAt = useRef(3200);
   const unitsRef = useRef<SnowUnit[]>(createSnowUnits());
   const snowballsRef = useRef<Snowball[]>([]);
+  const barriersRef = useRef<SnowBarrier[]>([]);
   const draggingRef = useRef<number | null>(null);
   const [units, setUnits] = useState<SnowUnit[]>(() => createSnowUnits());
   const [snowballs, setSnowballs] = useState<Snowball[]>([]);
+  const [barriers, setBarriers] = useState<SnowBarrier[]>([]);
   const [status, setStatus] = useState<'playing' | 'won' | 'lost'>('playing');
   const [dialogue, setDialogue] = useState('雪杖會自己聚雪。站定才能穩穩丟出去。');
 
@@ -3239,14 +3274,23 @@ function SnowfieldGame({ onBack }: { onBack: () => void }) {
     const next = createSnowUnits();
     unitsRef.current = next;
     snowballsRef.current = [];
+    barriersRef.current = [];
     draggingRef.current = null;
     nextSnowballId.current = 1;
+    nextSnowBarrierId.current = 1;
+    nextBarrierAt.current = 3200;
     lastTime.current = null;
     setUnits(next);
     setSnowballs([]);
+    setBarriers([]);
     setStatus('playing');
     setDialogue('雪杖會自己聚雪。站定才能穩穩丟出去。');
   }, []);
+
+  useEffect(() => {
+    if (status === 'won') playGameSfx('door');
+    if (status === 'lost') playGameSfx('hit');
+  }, [status]);
 
   const moveDraggedUnit = useCallback((clientX: number, clientY: number) => {
     const id = draggingRef.current;
@@ -3286,6 +3330,24 @@ function SnowfieldGame({ onBack }: { onBack: () => void }) {
         const nextUnits = unitsRef.current.map((unit) => ({ ...unit }));
         const nextSnowballs: Snowball[] = [];
         const spawned: Snowball[] = [];
+        let nextBarriers = barriersRef.current.filter((barrier) => barrier.expiresAt > time);
+        if (time >= nextBarrierAt.current) {
+          if (nextBarriers.length < 2) {
+            nextBarriers = [
+              ...nextBarriers,
+              {
+                id: nextSnowBarrierId.current++,
+                x: randomInt(24, 76),
+                y: randomInt(52, 67),
+                width: randomInt(19, 26),
+                height: randomInt(4, 6),
+                expiresAt: time + randomInt(5200, 7200),
+              },
+            ];
+            setDialogue('冰晶隔板浮現了，可以暫時躲在後方。');
+          }
+          nextBarrierAt.current = time + randomInt(6200, 9200);
+        }
 
         nextUnits.forEach((unit) => {
           if (unit.hp <= 0) return;
@@ -3330,9 +3392,20 @@ function SnowfieldGame({ onBack }: { onBack: () => void }) {
             x: ball.x + ball.vx * dt,
             y: ball.y + ball.vy * dt,
           };
+          const blockedByBarrier = ball.side === 'enemy' && nextBarriers.some((barrier) => {
+            const insideX = moved.x >= barrier.x - barrier.width / 2 && moved.x <= barrier.x + barrier.width / 2;
+            const crossedY = ball.y <= barrier.y + barrier.height / 2 && moved.y >= barrier.y - barrier.height / 2;
+            const steepEnough = Math.abs(ball.vx) < Math.abs(ball.vy) * 0.52;
+            return insideX && crossedY && steepEnough;
+          });
+          if (blockedByBarrier) {
+            playGameSfx('hit');
+            return;
+          }
           const target = nextUnits.find((unit) => unit.side !== ball.side && unit.hp > 0 && Math.hypot(unit.x - moved.x, unit.y - moved.y) < 5.2);
           if (target) {
             target.hp = Math.max(0, target.hp - 10);
+            if (target.hp % 30 === 0 || target.hp <= 0) playGameSfx('hit');
             return;
           }
           if (moved.x > -5 && moved.x < 105 && moved.y > -5 && moved.y < 105) {
@@ -3352,8 +3425,10 @@ function SnowfieldGame({ onBack }: { onBack: () => void }) {
 
         unitsRef.current = nextUnits;
         snowballsRef.current = nextSnowballs.slice(-24);
+        barriersRef.current = nextBarriers;
         setUnits(unitsRef.current);
         setSnowballs(snowballsRef.current);
+        setBarriers(nextBarriers);
       }
 
       rafRef.current = requestAnimationFrame(tick);
@@ -3370,20 +3445,13 @@ function SnowfieldGame({ onBack }: { onBack: () => void }) {
 
   return (
     <section className="screen snowfield-screen">
-      <Header
-        title="冰雪高原"
-        onBack={onBack}
-        action={
-          <button onClick={restart} aria-label="重新開始">
-            <RotateCcw size={20} />
-          </button>
-        }
-      />
-      <div className="snowfield-cast-panel">
-        <img className="snowfield-host" src={assets.whaleSharkHost} alt="" aria-hidden="true" />
-        <div className="snowfield-dialogue">
-          <p>{dialogue}</p>
-        </div>
+      <div className="snowfield-nav">
+        <button className="icon-button" onClick={onBack} aria-label="返回">
+          <ChevronLeft size={20} />
+        </button>
+        <button className="icon-button" onClick={restart} aria-label="重新開始">
+          <RotateCcw size={20} />
+        </button>
       </div>
       <div
         className="snowfield-arena"
@@ -3400,7 +3468,11 @@ function SnowfieldGame({ onBack }: { onBack: () => void }) {
           <span>
             敵方 <strong>{enemiesLeft}/3</strong>
           </span>
+          <span>
+            隔板 <strong>{barriers.length}/2</strong>
+          </span>
         </div>
+        <div className="snowfield-notice">{dialogue}</div>
         <div className="snow-lane enemy-lane" />
         <div className="snow-lane ally-lane" />
         {units.map((unit) => (
@@ -3418,6 +3490,18 @@ function SnowfieldGame({ onBack }: { onBack: () => void }) {
             <img src={unit.side === 'ally' ? assets.silverbackHost : assets.bossStates.idle} alt="" />
             <i style={{ width: `${Math.min(100, unit.hp)}%` }} />
           </button>
+        ))}
+        {barriers.map((barrier) => (
+          <span
+            className="snow-barrier"
+            key={barrier.id}
+            style={{
+              left: `${barrier.x}%`,
+              top: `${barrier.y}%`,
+              width: `${barrier.width}%`,
+              height: `${barrier.height}%`,
+            }}
+          />
         ))}
         {snowballs.map((ball) => (
           <span className={`snowball ${ball.side}`} key={ball.id} style={{ left: `${ball.x}%`, top: `${ball.y}%` }} />
@@ -3597,6 +3681,7 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
   const loseLife = useCallback((reason: 'self' | 'obstacle') => {
     const nextLives = livesRef.current - 1;
     livesRef.current = nextLives;
+    playGameSfx('hit');
     if (nextLives <= 0) {
       statusRef.current = 'lost';
       setLives(0);
@@ -3659,7 +3744,7 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
         loseLife('obstacle');
         return;
       }
-      const nextSnakeCamera = didWrap ? snakeCenteredCamera(head) : snakeCameraWithDeadZone(snakeCameraRef.current, head);
+      const nextSnakeCamera = didWrap ? snakeCenteredCamera(head) : snakeSmoothCamera(snakeCameraRef.current, head);
       snakeCameraRef.current = nextSnakeCamera;
       setSnakeCamera(nextSnakeCamera);
       if (materialBonus > 0) {
@@ -3682,15 +3767,18 @@ function TideSnakeGame({ onBack }: { onBack: () => void }) {
         invincibleUntilRef.current = nextInvincibleUntil;
         setPowerup(null);
         setInvincibleUntil(nextInvincibleUntil);
+        playGameSfx('powerup');
       }
 
       if (ateFood || materialBonus > 0) {
         const nextScore = scoreRef.current + (ateFood ? 1 : 0) + materialBonus;
         scoreRef.current = nextScore;
         setScore(nextScore);
+        if (ateFood || materialBonus > 0) playGameSfx(materialBonus > 0 ? 'blast' : 'powerup');
         if (nextScore >= snakeTarget) {
           statusRef.current = 'won';
           setStatus('won');
+          playGameSfx('door');
           return;
         }
         if (ateFood) {
@@ -3998,6 +4086,7 @@ function AbyssTowerGame({ onBack }: { onBack: () => void }) {
     statusRef.current = 'playing';
     setStatus('playing');
     setDialogue('往下，別被塔頂尖刺追上。');
+    playGameSfx('select');
   }, []);
 
   const loseLife = useCallback(
@@ -4010,11 +4099,13 @@ function AbyssTowerGame({ onBack }: { onBack: () => void }) {
         statusRef.current = 'lost';
         setLives(0);
         setStatus('lost');
+        playGameSfx('hit');
         setDialogue(
           reason === 'spike' ? '塔頂尖刺合上了，王子被逼回深淵。' : reason === 'monster' ? '垃圾海葵堵住階梯，王子被拖進暗流。' : '沒有踏上平台，深淵吞掉了路線。',
         );
         return;
       }
+      playGameSfx('hit');
       syncRound(nextProgress, nextLives, 'ready');
       setDialogue(reason === 'spike' ? '太慢了。重新找下一層，時間倒退15秒。' : reason === 'monster' ? '撞上海葵了。時間倒退15秒，等護盾再硬闖。' : '踩空了。時間倒退15秒，再下去一次。');
     },
@@ -4143,6 +4234,7 @@ function AbyssTowerGame({ onBack }: { onBack: () => void }) {
           setHoverUntil(hoverUntilRef.current);
           setInvincibleUntil(invincibleUntilRef.current);
           nextPowerup = null;
+          playGameSfx('powerup');
           setDialogue('懸浮泡泡啟動，5秒內下墜變慢，也能撞開海葵。');
         }
         if (hoverUntilRef.current && hoverUntilRef.current <= time) {
@@ -4178,6 +4270,7 @@ function AbyssTowerGame({ onBack }: { onBack: () => void }) {
         if (hitMonster) {
           if (invincibleUntilRef.current > time) {
             nextMonsters = nextMonsters.filter((monster) => monster.id !== hitMonster.id);
+            playGameSfx('blast');
             setDialogue('護盾光把海葵彈開了，繼續往下。');
           } else {
             monstersRef.current = nextMonsters;
@@ -4202,6 +4295,7 @@ function AbyssTowerGame({ onBack }: { onBack: () => void }) {
         if (progressRef.current >= towerGoalMs) {
           statusRef.current = 'won';
           setStatus('won');
+          playGameSfx('door');
           setDialogue('竟然真的下去了……有意思。');
         } else if (nextPlayer.y < 8.5) {
           loseLife('spike');
@@ -4569,6 +4663,9 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
     if (!wasHolding) {
       movePlayerIntent(intent);
       nextPlayerStepAt.current = startTime + (dashUntilRef.current > startTime ? 118 : cityPlayerStepDelayMs);
+    } else if (!sameIntent) {
+      movePlayerIntent(intent);
+      nextPlayerStepAt.current = startTime + (dashUntilRef.current > startTime ? 112 : Math.max(120, cityPlayerStepDelayMs - 32));
     }
   }, [facePlayerDirection, movePlayerIntent]);
 
@@ -4699,6 +4796,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
             ...shotsRef.current,
             ...allyShots,
           ].slice(-30);
+          playGameSfx('bomb');
           currentPlayer.cooldown = rapid ? 390 : 650;
           if (spread) {
             currentPlayer.cooldown += 90;
@@ -4823,6 +4921,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
               target.hp -= 1;
               if (target.hp <= 0) {
                 nextKills += 1;
+                playGameSfx('blast');
                 if (Math.random() < cityConfig.dropChance) {
                   nextPowerups = [
                     ...nextPowerups,
@@ -4845,12 +4944,14 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
                 nextArmor -= 1;
                 shieldUntilRef.current = time + 1400;
                 setShieldUntil(time + 1400);
+                playGameSfx('hit');
                 showCityNotice('damage', '裝甲 -1');
               }
               return;
             }
             if (cityIntersectsRect(moved.x, moved.y, cityCellSize * 0.45, { x: cityBase.x - cityBase.size / 2, y: cityBase.y - cityBase.size / 2, size: cityBase.size })) {
               nextBaseHp -= 1;
+              playGameSfx('hit');
               showCityNotice('base', '主堡 -1');
               return;
             }
@@ -5053,7 +5154,7 @@ function UnderseaCityGame({ onBack }: { onBack: () => void }) {
                 style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.size}%`, height: `${tile.size}%` }}
               />
             ))}
-            <div className="city-base" style={{ left: `${cityBase.x}%`, top: `${cityBase.y}%`, width: `${cityBase.size}%`, height: `${cityBase.size}%`, ['--base-hp' as string]: baseHp }}>
+            <div className={`city-base hp-${baseHp} ${baseHp <= 1 ? 'critical' : baseHp <= 2 ? 'danger' : ''}`} style={{ left: `${cityBase.x}%`, top: `${cityBase.y}%`, width: `${cityBase.size}%`, height: `${cityBase.size}%`, ['--base-hp' as string]: baseHp }}>
               <img src={assets.cityUnits.base} alt="" />
             </div>
             {powerups.map((powerup) => (
@@ -6260,7 +6361,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
         </button>
       </div>
       <div className="revelation-arena" ref={arenaRef}>
-        <div className="revelation-viewport" style={viewportStyle}>
+        <div className={`revelation-viewport ${player.drawing ? 'drawing' : 'safe'}`} style={viewportStyle}>
           <div className="revelation-world" style={worldStyle}>
             <img className="revelation-bg" src={assets.revelation.frozen} alt="" />
             <div className="revelation-frost" />
@@ -6289,6 +6390,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
           </div>
           <div className="revelation-hud">
             <span>封印 <strong>{percent}%</strong></span>
+            <span className={player.drawing ? 'danger' : 'safe'}>{player.drawing ? '畫線' : '安全'}</span>
             <span>目標 <strong>{revelationTargetPercent}%</strong></span>
             <span>時 <strong>{remainingSec}</strong></span>
             <span>命 <strong>{lives}</strong></span>

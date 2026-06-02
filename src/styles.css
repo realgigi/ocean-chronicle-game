@@ -1351,10 +1351,35 @@ button:disabled {
   width: 100%;
   max-width: 100%;
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: minmax(0, 1fr);
   background:
     radial-gradient(circle at 50% 0%, rgba(196, 250, 255, 0.34), transparent 30%),
     linear-gradient(180deg, #092033 0%, #12314c 42%, #061422 100%);
+}
+
+.snowfield-nav {
+  position: absolute;
+  z-index: 24;
+  top: max(8px, env(safe-area-inset-top));
+  left: 8px;
+  right: 18px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.snowfield-nav .icon-button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(4, 18, 30, 0.66);
+  box-shadow:
+    inset 0 0 0 1px rgba(181, 235, 243, 0.24),
+    0 10px 18px rgba(0, 0, 0, 0.24);
+  pointer-events: auto;
 }
 
 .snowfield-screen::before {
@@ -1431,10 +1456,10 @@ button:disabled {
 .snowfield-arena {
   min-width: 0;
   min-height: 0;
-  margin: 0 18px 18px;
+  margin: 0;
   overflow: hidden;
   touch-action: none;
-  border-radius: 12px;
+  border-radius: 0;
   background:
     radial-gradient(circle at 50% 49%, rgba(255, 255, 255, 0.16), transparent 28%),
     linear-gradient(180deg, rgba(181, 233, 255, 0.2), rgba(4, 18, 31, 0.86)),
@@ -1447,24 +1472,48 @@ button:disabled {
 .snowfield-hud {
   position: absolute;
   z-index: 8;
-  left: 10px;
-  right: 10px;
-  top: 10px;
+  left: 48px;
+  right: 48px;
+  top: 8px;
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
   pointer-events: none;
 }
 
 .snowfield-hud span {
-  min-width: 80px;
-  padding: 6px 9px;
+  min-width: 0;
+  flex: 1 1 0;
+  padding: 6px 6px;
   border-radius: 8px;
   background: rgba(4, 20, 34, 0.66);
   color: #dcf8ff;
   font-size: 12px;
   font-weight: 900;
   box-shadow: inset 0 0 0 1px rgba(194, 242, 255, 0.2);
+}
+
+.snowfield-notice {
+  position: absolute;
+  z-index: 18;
+  left: 18px;
+  right: 18px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: rgba(236, 253, 255, 0.92);
+  background: rgba(4, 18, 30, 0.62);
+  box-shadow:
+    inset 0 0 0 1px rgba(194, 242, 255, 0.18),
+    0 10px 22px rgba(0, 0, 0, 0.24);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.25;
+  text-align: center;
+  pointer-events: none;
 }
 
 .snowfield-hud strong {
@@ -1564,6 +1613,22 @@ button:disabled {
     0 0 14px rgba(162, 232, 255, 0.58);
 }
 
+.snow-barrier {
+  position: absolute;
+  z-index: 6;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.42), rgba(163, 242, 255, 0.88) 28%, rgba(244, 255, 255, 0.7) 50%, rgba(113, 194, 255, 0.82) 72%, rgba(255, 255, 255, 0.38)),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.46) 0 7px, transparent 8px 18px);
+  box-shadow:
+    0 0 0 2px rgba(230, 252, 255, 0.32),
+    0 0 18px rgba(153, 232, 255, 0.54),
+    inset 0 -7px 12px rgba(27, 91, 135, 0.28);
+  pointer-events: none;
+  animation: snowBarrierPulse 1.1s ease-in-out infinite;
+}
+
 .snowball.enemy {
   background:
     radial-gradient(circle at 32% 28%, #fff 0 18%, rgba(218, 243, 255, 0.95) 19% 58%, rgba(89, 72, 158, 0.42) 59%);
@@ -1596,6 +1661,19 @@ button:disabled {
   padding: 0 16px;
   background: linear-gradient(180deg, rgba(255, 236, 155, 0.98), rgba(102, 210, 242, 0.96));
   color: #163140;
+}
+
+@keyframes snowBarrierPulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    filter: brightness(0.96);
+  }
+
+  50% {
+    opacity: 1;
+    filter: brightness(1.18);
+  }
 }
 
 .tide-screen {
@@ -1738,7 +1816,7 @@ button:disabled {
   left: 0;
   top: 0;
   will-change: transform;
-  transition: transform var(--snake-step-ms, 190ms) linear;
+  transition: transform calc(var(--snake-step-ms, 190ms) * 0.92) cubic-bezier(0.22, 0.8, 0.28, 1);
   background:
     linear-gradient(120deg, rgba(255, 222, 110, 0.08), transparent 24%, rgba(113, 236, 202, 0.09) 58%, transparent 78%),
     linear-gradient(180deg, rgba(13, 68, 70, 0.98), rgba(5, 26, 39, 0.98));
@@ -1915,7 +1993,7 @@ button:disabled {
 
 .snake-head {
   --snake-rotate: 0deg;
-  z-index: 24;
+  z-index: 32;
   width: calc(var(--snake-cell-px) * 1.3);
   height: calc(var(--snake-cell-px) * 1.3);
   object-fit: contain;
@@ -1941,7 +2019,7 @@ button:disabled {
 
 .snake-aura {
   position: absolute;
-  z-index: 22;
+  z-index: 31;
   left: 0;
   top: 0;
   width: calc(var(--snake-cell-px) * 2.1);
@@ -2008,23 +2086,23 @@ button:disabled {
 }
 
 .snake-food {
-  z-index: 22;
-  width: calc(var(--snake-cell-px) * 1.12);
-  height: calc(var(--snake-cell-px) * 1.12);
+  z-index: 30;
+  width: calc(var(--snake-cell-px) * 1.28);
+  height: calc(var(--snake-cell-px) * 1.28);
   border-radius: 50%;
   background:
     radial-gradient(circle, #fff 0 12%, #fff4a8 13% 30%, rgba(89, 239, 205, 0.9) 31% 62%, transparent 63%);
   box-shadow:
     0 0 0 3px rgba(4, 16, 25, 0.5),
-    0 0 18px rgba(255, 228, 117, 0.76),
-    0 0 28px rgba(93, 240, 210, 0.42);
+    0 0 20px rgba(255, 238, 118, 0.96),
+    0 0 36px rgba(93, 240, 210, 0.72);
   animation: snakePulse 1.1s ease-in-out infinite;
 }
 
 .snake-obstacle {
-  z-index: 23;
-  width: calc(var(--snake-cell-px) * 1.36);
-  height: calc(var(--snake-cell-px) * 1.36);
+  z-index: 29;
+  width: calc(var(--snake-cell-px) * 1.44);
+  height: calc(var(--snake-cell-px) * 1.44);
   object-fit: contain;
   filter:
     drop-shadow(0 0 0 rgba(4, 16, 25, 0.8))
@@ -2034,9 +2112,9 @@ button:disabled {
 }
 
 .snake-powerup {
-  z-index: 23;
-  width: calc(var(--snake-cell-px) * 1.18);
-  height: calc(var(--snake-cell-px) * 1.18);
+  z-index: 31;
+  width: calc(var(--snake-cell-px) * 1.28);
+  height: calc(var(--snake-cell-px) * 1.28);
   object-fit: contain;
   border-radius: 50%;
   filter:
@@ -2172,7 +2250,7 @@ button:disabled {
 
 .snake-result {
   position: absolute;
-  z-index: 24;
+  z-index: 36;
   left: 34px;
   right: 34px;
   bottom: 94px;
@@ -2201,10 +2279,10 @@ button:disabled {
 
 .snake-ready {
   position: absolute;
-  z-index: 23;
+  z-index: 35;
   left: 22px;
   right: 22px;
-  top: 46%;
+  top: 48%;
   transform: translateY(-50%);
   display: grid;
   gap: 6px;
@@ -2212,10 +2290,13 @@ button:disabled {
   padding: 13px 16px;
   border-radius: 8px;
   color: rgba(238, 255, 251, 0.95);
-  background: rgba(4, 20, 29, 0.68);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 235, 144, 0.14), transparent 52%),
+    rgba(4, 20, 29, 0.9);
   box-shadow:
-    0 14px 30px rgba(0, 0, 0, 0.32),
-    inset 0 0 0 1px rgba(172, 245, 229, 0.24);
+    0 18px 36px rgba(0, 0, 0, 0.42),
+    0 0 24px rgba(109, 237, 213, 0.22),
+    inset 0 0 0 1px rgba(172, 245, 229, 0.34);
   pointer-events: none;
   animation: snakeReadyPulse 900ms ease-out both;
 }
@@ -2915,6 +2996,18 @@ button:disabled {
   box-shadow: inset 0 0 16px rgba(166, 236, 248, 0.22);
 }
 
+.city-base.danger {
+  animation: cityBaseWarning 760ms ease-in-out infinite;
+}
+
+.city-base.critical {
+  animation: cityBaseWarning 420ms ease-in-out infinite;
+  box-shadow:
+    0 0 0 3px rgba(255, 177, 116, 0.36),
+    0 0 28px rgba(255, 89, 130, 0.62),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.58);
+}
+
 .city-base img {
   position: relative;
   z-index: 1;
@@ -3347,8 +3440,8 @@ button:disabled {
   z-index: 22;
   left: 8px;
   bottom: 10px;
-  width: 124px;
-  height: 124px;
+  width: 116px;
+  height: 116px;
   border-radius: 50%;
   background:
     radial-gradient(circle at 50% 50%, rgba(133, 245, 255, 0.25) 0 17%, transparent 18% 38%, rgba(255, 231, 132, 0.12) 39% 43%, transparent 44%),
@@ -3444,8 +3537,8 @@ button:disabled {
   z-index: 22;
   right: 14px;
   bottom: 30px;
-  width: 70px;
-  height: 70px;
+  width: 74px;
+  height: 74px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -3534,6 +3627,17 @@ button:disabled {
   100% {
     opacity: 0;
     transform: translate(-50%, -14px) scale(0.96);
+  }
+}
+
+@keyframes cityBaseWarning {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 10px rgba(255, 225, 132, 0.38));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 22px rgba(255, 92, 139, 0.78));
   }
 }
 
@@ -4264,6 +4368,27 @@ button:disabled {
   background: #061928;
 }
 
+.revelation-viewport::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 21;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 2px rgba(134, 235, 255, 0.18);
+  transition: box-shadow 160ms linear, background 160ms linear;
+}
+
+.revelation-viewport.drawing::after {
+  background: radial-gradient(circle at 50% 50%, transparent 58%, rgba(255, 73, 126, 0.13) 100%);
+  box-shadow:
+    inset 0 0 0 3px rgba(255, 230, 125, 0.46),
+    inset 0 0 28px rgba(255, 84, 138, 0.34);
+}
+
+.revelation-viewport.safe .revelation-shot {
+  opacity: 0.76;
+}
+
 .revelation-world {
   position: absolute;
   left: 0;
@@ -4308,17 +4433,20 @@ button:disabled {
     linear-gradient(135deg, rgba(255, 243, 190, 0.34), rgba(101, 226, 255, 0.28));
   box-shadow:
     inset 0 0 0 1px rgba(238, 254, 255, 0.3),
-    0 0 12px rgba(151, 235, 255, 0.22);
-  filter: brightness(1.62) saturate(1.22);
+    0 0 14px rgba(151, 235, 255, 0.3);
+  filter: brightness(1.78) saturate(1.28);
 }
 
 .revelation-trail {
   z-index: 8;
-  transform: scale(0.7);
-  background: rgba(255, 245, 163, 0.94);
+  transform: scale(0.9);
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.82), rgba(255, 245, 132, 0.96) 44%, rgba(104, 238, 255, 0.72) 82%);
   box-shadow:
-    0 0 12px rgba(255, 240, 122, 0.9),
-    0 0 22px rgba(119, 236, 255, 0.56);
+    0 0 0 1px rgba(255, 248, 166, 0.42),
+    0 0 15px rgba(255, 240, 122, 0.95),
+    0 0 28px rgba(119, 236, 255, 0.66);
+  animation: revelationTrailPulse 520ms ease-in-out infinite;
 }
 
 .revelation-player,
@@ -4417,7 +4545,7 @@ button:disabled {
   left: 48px;
   right: 48px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 5px;
   pointer-events: none;
 }
@@ -4438,6 +4566,20 @@ button:disabled {
 
 .revelation-hud strong {
   color: #fff1ad;
+}
+
+.revelation-hud .safe {
+  color: #061928;
+  background: linear-gradient(135deg, rgba(175, 248, 255, 0.94), rgba(255, 238, 157, 0.88));
+}
+
+.revelation-hud .danger {
+  color: #fff7fb;
+  background: linear-gradient(135deg, rgba(229, 57, 115, 0.94), rgba(117, 42, 158, 0.9));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 210, 232, 0.28),
+    0 0 16px rgba(255, 90, 149, 0.36);
+  animation: snakeInvincibleBlink 320ms steps(2, end) infinite;
 }
 
 .revelation-notice {
@@ -4682,6 +4824,19 @@ button:disabled {
 
   50% {
     transform: translate(-50%, -52%) scale(1.04);
+  }
+}
+
+@keyframes revelationTrailPulse {
+  0%,
+  100% {
+    opacity: 0.86;
+    filter: brightness(1);
+  }
+
+  50% {
+    opacity: 1;
+    filter: brightness(1.22);
   }
 }
 
@@ -5319,7 +5474,7 @@ button:disabled {
   }
 
   .city-fire-control {
-    width: 64px;
-    height: 64px;
+    width: 68px;
+    height: 68px;
   }
 }
