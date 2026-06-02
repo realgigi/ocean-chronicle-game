@@ -4323,6 +4323,7 @@ button:disabled {
 
 .revelation-player,
 .revelation-enemy,
+.revelation-shot,
 .revelation-powerup {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -4368,6 +4369,11 @@ button:disabled {
 
 .revelation-enemy.jellyfish {
   z-index: 14;
+  filter:
+    drop-shadow(0 14px 22px rgba(0, 0, 0, 0.48))
+    drop-shadow(0 0 20px rgba(156, 72, 255, 0.58))
+    drop-shadow(0 0 34px rgba(67, 214, 255, 0.28));
+  animation: revelationBossFloat 1.85s ease-in-out infinite;
 }
 
 .revelation-enemy.frozen {
@@ -4375,6 +4381,16 @@ button:disabled {
     grayscale(0.2)
     drop-shadow(0 0 18px rgba(178, 242, 255, 0.86));
   opacity: 0.72;
+}
+
+.revelation-shot {
+  z-index: 15;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.96), rgba(202, 236, 255, 0.78) 20%, rgba(163, 82, 255, 0.86) 62%, rgba(54, 14, 109, 0.9) 76%);
+  box-shadow:
+    0 0 10px rgba(213, 239, 255, 0.92),
+    0 0 22px rgba(155, 82, 255, 0.74);
 }
 
 .revelation-powerup {
@@ -4656,6 +4672,17 @@ button:disabled {
   padding: 0 16px;
   background: linear-gradient(180deg, rgba(255, 239, 160, 0.98), rgba(130, 219, 242, 0.96));
   color: #132535;
+}
+
+@keyframes revelationBossFloat {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  50% {
+    transform: translate(-50%, -52%) scale(1.04);
+  }
 }
 
 @keyframes lightBombPulse {

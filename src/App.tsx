@@ -361,6 +361,16 @@ type RevelationEnemy = {
   vx: number;
   vy: number;
   size: number;
+  attackAt?: number;
+};
+type RevelationShot = {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  expiresAt: number;
 };
 type RevelationPowerup = RevelationCell & {
   id: number;
@@ -601,9 +611,9 @@ const videoLeadIns = {
     destination: 'lightbomb',
   },
   ancientRevelation: {
-    eyebrow: '遠古神啟示',
+    eyebrow: '王國冰晶',
     title: '冰晶王女的封印板',
-    src: assetUrl('/assets/mobile/videos/ice-crystal-castle-intro.mp4?v=20260528'),
+    src: assetUrl('/assets/mobile/videos/kingdom-ice-intro.mp4?v=20260602'),
     actionLabel: '進入封印板',
     destination: 'revelation',
   },
@@ -1002,7 +1012,7 @@ const revelationSafeBorder = 2;
 const revelationTargetPercent = 72;
 const revelationTimeLimitMs = 150000;
 const revelationStart = { col: Math.floor(revelationCols / 2), row: revelationRows - revelationSafeBorder };
-const revelationEnemyKinds: RevelationEnemyKind[] = ['jellyfish', 'urchin', 'squid', 'anemone', 'urchin', 'squid'];
+const revelationEnemyKinds: RevelationEnemyKind[] = ['jellyfish', 'urchin', 'squid', 'anemone', 'urchin', 'squid', 'anemone', 'urchin', 'squid', 'anemone'];
 const revelationPowerKinds: RevelationPowerKind[] = ['speed', 'freeze', 'reveal', 'shield', 'slow', 'life', 'freeze', 'reveal', 'speed', 'shield'];
 const revelationPowerLabels: Record<RevelationPowerKind, string> = {
   speed: '速',
@@ -1123,7 +1133,7 @@ function randomRevelationOpenCell(grid: boolean[][], enemies: RevelationEnemy[] 
 function createRevelationEnemies(grid: boolean[][]): RevelationEnemy[] {
   return revelationEnemyKinds.map((kind, index) => {
     const cell = randomRevelationOpenCell(grid, [], kind === 'jellyfish' ? 9 : 5);
-    const speed = kind === 'jellyfish' ? 3.15 : kind === 'anemone' ? 2.15 : kind === 'urchin' ? 2.7 : 3.05;
+    const speed = kind === 'jellyfish' ? 2.35 : kind === 'anemone' ? 2.05 : kind === 'urchin' ? 2.55 : 2.85;
     const velocity = randomRevelationVelocity(speed);
     return {
       id: index + 1,
@@ -1132,7 +1142,8 @@ function createRevelationEnemies(grid: boolean[][]): RevelationEnemy[] {
       y: cell.row + 0.5,
       vx: velocity.vx,
       vy: velocity.vy,
-      size: kind === 'jellyfish' ? 3.2 : kind === 'anemone' ? 1.45 : 1.22,
+      size: kind === 'jellyfish' ? 5.1 : kind === 'anemone' ? 1.45 : 1.22,
+      attackAt: kind === 'jellyfish' ? performance.now() + 1800 : undefined,
     };
   });
 }
@@ -2319,7 +2330,7 @@ function EpisodeMap({
     ['深淵高塔', 'tower'],
     ['海底城市', 'city'],
     ['海光迷宮', 'lightbomb'],
-    ['遠古神啟示', 'revelation'],
+    ['王國冰晶', 'revelation'],
   ];
   return (
     <section className="screen map-screen">
@@ -2348,7 +2359,7 @@ function EpisodeMap({
                               ? onCity
                               : name === '海光迷宮'
                                 ? onLightBomb
-                                : name === '遠古神啟示'
+                                : name === '王國冰晶'
                                   ? onRevelation
                         : undefined
             }
@@ -2358,23 +2369,23 @@ function EpisodeMap({
               {state === 'cleared'
                 ? '已通關'
                 : state === 'shooter'
-                  ? '射擊'
+                  ? '射擊戰'
                   : state === 'breakout'
-                  ? '打磚'
+                  ? '破冰磚'
                   : state === 'memory'
-                    ? '翻牌'
+                    ? '記憶牌'
                     : state === 'minefield'
-                      ? '踩雷'
+                      ? '踩雷陣'
                       : state === 'snowfield'
-                        ? '打雪杖'
+                        ? '雪杖戰'
                         : state === 'snake'
                           ? '貪食蛇'
                           : state === 'tower'
-                            ? '下樓'
+                            ? '下樓塔'
                             : state === 'city'
-                              ? '坦克'
+                              ? '坦克戰'
                               : state === 'lightbomb'
-                                ? '光爆'
+                                ? '光爆陣'
                                 : state === 'revelation'
                                   ? '天蠶變'
                     : state === 'coming'
@@ -5775,10 +5786,12 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
   const lastTickRef = useRef(0);
   const remainingRef = useRef(revelationTimeLimitMs);
   const noticeIdRef = useRef(1);
+  const shotIdRef = useRef(1);
   const noticeTimerRef = useRef<number | null>(null);
   const claimedRef = useRef<boolean[][]>(createRevelationClaimed());
   const playerRef = useRef<RevelationPlayer>(createRevelationPlayer());
   const enemiesRef = useRef<RevelationEnemy[]>(createRevelationEnemies(claimedRef.current));
+  const shotsRef = useRef<RevelationShot[]>([]);
   const powerupsRef = useRef<RevelationPowerup[]>(createRevelationPowerups(claimedRef.current, enemiesRef.current));
   const trailRef = useRef<RevelationCell[]>([]);
   const statusRef = useRef<RevelationStatus>('ready');
@@ -5787,6 +5800,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
   const [claimed, setClaimed] = useState(() => claimedRef.current);
   const [player, setPlayer] = useState(() => playerRef.current);
   const [enemies, setEnemies] = useState(() => enemiesRef.current);
+  const [shots, setShots] = useState<RevelationShot[]>([]);
   const [powerups, setPowerups] = useState(() => powerupsRef.current);
   const [trail, setTrail] = useState<RevelationCell[]>([]);
   const [status, setStatus] = useState<RevelationStatus>('ready');
@@ -5808,6 +5822,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
     claimed?: boolean[][];
     player?: RevelationPlayer;
     enemies?: RevelationEnemy[];
+    shots?: RevelationShot[];
     powerups?: RevelationPowerup[];
     trail?: RevelationCell[];
     status?: RevelationStatus;
@@ -5825,6 +5840,10 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
     if (next.enemies) {
       enemiesRef.current = next.enemies;
       setEnemies(next.enemies);
+    }
+    if (next.shots) {
+      shotsRef.current = next.shots;
+      setShots(next.shots);
     }
     if (next.powerups) {
       powerupsRef.current = next.powerups;
@@ -5852,7 +5871,14 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
     if (!defeatedEnemyIds.has(enemy.id) && !revelationEnemyBlocked(grid, enemy.x, enemy.y, enemy.size)) return enemy;
     const cell = randomRevelationOpenCell(grid, [], enemy.kind === 'jellyfish' ? 8 : 4);
     const velocity = randomRevelationVelocity(Math.max(1.8, Math.hypot(enemy.vx, enemy.vy)));
-    return { ...enemy, x: cell.col + 0.5, y: cell.row + 0.5, vx: velocity.vx, vy: velocity.vy };
+    return {
+      ...enemy,
+      x: cell.col + 0.5,
+      y: cell.row + 0.5,
+      vx: velocity.vx,
+      vy: velocity.vy,
+      attackAt: enemy.kind === 'jellyfish' ? performance.now() + 1800 : undefined,
+    };
   }), []);
 
   const restart = useCallback(() => {
@@ -5864,6 +5890,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
       player: nextPlayer,
       enemies: nextEnemies,
       powerups: createRevelationPowerups(nextClaimed, nextEnemies),
+      shots: [],
       trail: [],
       status: 'ready',
       lives: 3,
@@ -5885,7 +5912,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
         drawing: false,
         shieldUntil: 0,
       };
-      syncGame({ player: nextPlayer, trail: [] });
+      syncGame({ player: nextPlayer, trail: [], shots: [] });
       playGameSfx('hit');
       showNotice('護盾擋下裂縫', 'shield');
       return;
@@ -5900,6 +5927,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
     syncGame({
       player: nextPlayer,
       trail: [],
+      shots: [],
       lives: nextLives,
       status: nextLives > 0 ? 'ready' : 'lost',
     });
@@ -6011,6 +6039,48 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
           else nextEnemy.vy *= -1;
           return nextEnemy;
         });
+        let nextShots = shotsRef.current
+          .filter((shot) => shot.expiresAt > time)
+          .map((shot) => ({
+            ...shot,
+            x: shot.x + shot.vx * dt,
+            y: shot.y + shot.vy * dt,
+          }))
+          .filter((shot) => shot.x > -2 && shot.y > -2 && shot.x < revelationCols + 2 && shot.y < revelationRows + 2);
+
+        nextEnemies = nextEnemies.map((enemy) => {
+          if (enemy.kind !== 'jellyfish' || enemyScale === 0 || (enemy.attackAt ?? 0) > time) return enemy;
+          const dx = currentPlayer.x - enemy.x;
+          const dy = currentPlayer.y - enemy.y;
+          const length = Math.max(0.001, Math.hypot(dx, dy));
+          const baseX = dx / length;
+          const baseY = dy / length;
+          const shotSpeed = 9.2;
+          [-0.22, 0, 0.22].forEach((angle) => {
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            nextShots.push({
+              id: shotIdRef.current++,
+              x: enemy.x,
+              y: enemy.y,
+              vx: (baseX * cos - baseY * sin) * shotSpeed,
+              vy: (baseX * sin + baseY * cos) * shotSpeed,
+              size: 0.72,
+              expiresAt: time + 3200,
+            });
+          });
+          return { ...enemy, attackAt: time + 2100 };
+        });
+
+        const shotHitPlayer = nextShots.some((shot) => Math.hypot(shot.x - currentPlayer.x, shot.y - currentPlayer.y) < shot.size * 0.5 + 0.38);
+        const shotHitTrail = currentPlayer.drawing && trailRef.current.some((cell) => (
+          nextShots.some((shot) => Math.hypot(shot.x - (cell.col + 0.5), shot.y - (cell.row + 0.5)) < shot.size * 0.5 + 0.3)
+        ));
+        if (shotHitPlayer || shotHitTrail) {
+          resetAfterHit(time);
+          rafRef.current = requestAnimationFrame(tick);
+          return;
+        }
 
         if (intent?.primary) {
           const direction = intent.primary;
@@ -6049,6 +6119,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
               claimed: applied.grid,
               player: currentPlayer,
               enemies: nextEnemies,
+              shots: nextShots,
               powerups: applied.powerups,
               trail: [],
               status: percent >= revelationTargetPercent ? 'won' : 'playing',
@@ -6085,7 +6156,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
             return;
           }
         }
-        syncGame({ enemies: nextEnemies });
+        syncGame({ enemies: nextEnemies, shots: nextShots });
       }
 
       const currentPlayer = playerRef.current;
@@ -6208,6 +6279,9 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
               <span className={`revelation-enemy ${enemy.kind} ${player.freezeUntil > performance.now() ? 'frozen' : ''}`} key={enemy.id} style={tokenStyle(enemy.x, enemy.y, enemy.size)}>
                 <img src={enemyImage(enemy.kind)} alt="" />
               </span>
+            ))}
+            {shots.map((shot) => (
+              <span className="revelation-shot" key={shot.id} style={tokenStyle(shot.x, shot.y, shot.size)} />
             ))}
             <span className={`revelation-player dir-${player.dir} ${player.drawing ? 'drawing' : ''} ${player.shieldUntil > performance.now() ? 'shielded' : ''}`} style={tokenStyle(player.x, player.y, 1.14)}>
               <img src={assets.lightBombHeads.prince} alt="" />
