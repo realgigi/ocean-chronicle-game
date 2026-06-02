@@ -16,8 +16,27 @@ type GameProgressEntry = {
 };
 type GameProgress = Partial<Record<PlayableScene, GameProgressEntry>>;
 type GameCompleteHandler = (score?: number) => void;
+type CompletionNotice = {
+  id: number;
+  sceneName: string;
+  score: number;
+  best: number;
+  status: 'first' | 'record' | 'saved';
+};
 
 const progressStorageKey = 'ocean-chronicle-progress-v1';
+const sceneDisplayNames: Record<PlayableScene, string> = {
+  combat: '北境邊防',
+  memory: '珊瑚老街',
+  breakout: '冰晶王城',
+  minefield: '暗流原野',
+  snowfield: '冰雪高原',
+  snake: '海潮部落',
+  tower: '深淵高塔',
+  city: '海底城市',
+  lightbomb: '海光迷宮',
+  revelation: '王國冰晶',
+};
 const sceneShortHints: Record<PlayableScene, string> = {
   combat: '自動射擊',
   memory: '找成對',
@@ -65,6 +84,12 @@ function formatBestScore(score: number) {
   if (score <= 0) return '';
   if (score >= 10000) return `${(score / 10000).toFixed(1)}萬`;
   return `${Math.round(score)}`;
+}
+
+function completionStatusLabel(status: CompletionNotice['status']) {
+  if (status === 'first') return '首次通關';
+  if (status === 'record') return '新紀錄';
+  return '已記錄';
 }
 
 type Cutin = {
@@ -2208,25 +2233,46 @@ export default function App() {
   useVisualViewportFrame();
   const [screen, setScreen] = useState<Screen>(() => initialScreenFromQuery());
   const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress());
+  const [completionNotice, setCompletionNotice] = useState<CompletionNotice | null>(null);
   const [videoLeadIn, setVideoLeadIn] = useState<VideoLeadInConfig>(videoLeadIns.startGame);
+  const progressRef = useRef(progress);
+  const completionNoticeId = useRef(1);
 
   const recordGameProgress = useCallback((scene: PlayableScene, score = 0) => {
     const safeScore = Number.isFinite(score) ? Math.max(0, Math.round(score)) : 0;
-    setProgress((current) => {
-      const previous = current[scene];
-      const next: GameProgress = {
-        ...current,
-        [scene]: {
-          cleared: true,
-          best: Math.max(previous?.best ?? 0, safeScore),
-          plays: (previous?.plays ?? 0) + 1,
-          updatedAt: Date.now(),
-        },
-      };
-      saveGameProgress(next);
-      return next;
+    const current = progressRef.current;
+    const previous = current[scene];
+    const nextBest = Math.max(previous?.best ?? 0, safeScore);
+    const next: GameProgress = {
+      ...current,
+      [scene]: {
+        cleared: true,
+        best: nextBest,
+        plays: (previous?.plays ?? 0) + 1,
+        updatedAt: Date.now(),
+      },
+    };
+    progressRef.current = next;
+    setProgress(next);
+    saveGameProgress(next);
+    setCompletionNotice({
+      id: completionNoticeId.current++,
+      sceneName: sceneDisplayNames[scene],
+      score: safeScore,
+      best: nextBest,
+      status: previous?.cleared ? (safeScore > (previous.best ?? 0) ? 'record' : 'saved') : 'first',
     });
   }, []);
+
+  useEffect(() => {
+    progressRef.current = progress;
+  }, [progress]);
+
+  useEffect(() => {
+    if (!completionNotice) return undefined;
+    const timer = window.setTimeout(() => setCompletionNotice(null), 3600);
+    return () => window.clearTimeout(timer);
+  }, [completionNotice]);
 
   useEffect(() => {
     const stopOnHide = () => {
@@ -2364,6 +2410,7 @@ export default function App() {
           />
         )}
         {screen === 'victory' && <VictoryCard onMap={showMap} onReplay={openLeadInOrCombat} />}
+        {completionNotice && <CompletionToast notice={completionNotice} />}
       </div>
     </main>
   );
@@ -2384,6 +2431,18 @@ function TitleScreen({ onStart, onGallery }: { onStart: () => void; onGallery: (
         </button>
       </nav>
     </section>
+  );
+}
+
+function CompletionToast({ notice }: { notice: CompletionNotice }) {
+  return (
+    <div className={`completion-toast ${notice.status}`} key={notice.id} aria-live="polite">
+      <span>{completionStatusLabel(notice.status)}</span>
+      <strong>{notice.sceneName}</strong>
+      <small>
+        本局 {formatBestScore(notice.score) || '0'} · 最佳 {formatBestScore(notice.best) || '0'}
+      </small>
+    </div>
   );
 }
 
@@ -2431,9 +2490,14 @@ function EpisodeMap({
     { name: '海光迷宮', scene: 'lightbomb', style: 'lightbomb', onClick: onLightBomb },
     { name: '王國冰晶', scene: 'revelation', style: 'revelation', onClick: onRevelation },
   ];
+  const clearedCount = nodes.filter(({ scene }) => progress[scene]?.cleared).length;
   return (
     <section className="screen map-screen">
       <Header title="劇情地圖" onBack={onBack} />
+      <div className="map-progress-summary">
+        <strong>已通關 {clearedCount}/{nodes.length}</strong>
+        <span>本機紀錄</span>
+      </div>
       <div className="map-path">
         {nodes.map(({ name, scene, style, onClick }) => {
           const entry = progress[scene];
@@ -3306,7 +3370,10 @@ function MinefieldGame({ onBack, onComplete }: { onBack: () => void; onComplete:
         {(status === 'won' || status === 'lost') && (
           <div className="minefield-result">
             <strong>{status === 'won' ? '暗流偵查完成' : '偵查失敗'}</strong>
-            <button onClick={restart}>{status === 'won' ? '再探一次' : '重新挑戰'}</button>
+            <div className="row-actions">
+              <button onClick={restart}>{status === 'won' ? '再探一次' : '重新挑戰'}</button>
+              <button className="primary-action" onClick={onBack}>返回地圖</button>
+            </div>
           </div>
         )}
       </div>
@@ -3588,7 +3655,10 @@ function SnowfieldGame({ onBack, onComplete }: { onBack: () => void; onComplete:
         {(status === 'won' || status === 'lost') && (
           <div className="snowfield-result">
             <strong>{status === 'won' ? '雪線守住' : '雪杖失守'}</strong>
-            <button onClick={restart}>{status === 'won' ? '再打一場' : '重新布陣'}</button>
+            <div className="row-actions">
+              <button onClick={restart}>{status === 'won' ? '再打一場' : '重新布陣'}</button>
+              <button className="primary-action" onClick={onBack}>返回地圖</button>
+            </div>
           </div>
         )}
       </div>
@@ -4090,7 +4160,10 @@ function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete:
           {(status === 'won' || status === 'lost') && (
             <div className="snake-result">
               <strong>{status === 'won' ? '海潮路線完成' : '海潮迷失'}</strong>
-              <button onClick={restart}>{status === 'won' ? '再跑一次' : '重新挑戰'}</button>
+              <div className="row-actions">
+                <button onClick={restart}>{status === 'won' ? '再跑一次' : '重新挑戰'}</button>
+                <button className="primary-action" onClick={onBack}>返回地圖</button>
+              </div>
             </div>
           )}
         </div>
@@ -4485,7 +4558,10 @@ function AbyssTowerGame({ onBack, onComplete }: { onBack: () => void; onComplete
         {(status === 'won' || status === 'lost') && (
           <div className="tower-result">
             <strong>{status === 'won' ? '逃出高塔' : '墜入深淵'}</strong>
-            <button onClick={restart}>{status === 'won' ? '再下一次' : '重新挑戰'}</button>
+            <div className="row-actions">
+              <button onClick={restart}>{status === 'won' ? '再下一次' : '重新挑戰'}</button>
+              <button className="primary-action" onClick={onBack}>返回地圖</button>
+            </div>
           </div>
         )}
       </div>
@@ -5331,7 +5407,10 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
           {status !== 'playing' && (
             <div className="city-result">
               <strong>{status === 'won' ? '三重防線完成' : '防線失守'}</strong>
-              <button onClick={status === 'won' ? restart : continueCity}>{status === 'won' ? '再守一次' : '半能量續戰'}</button>
+              <div className="row-actions">
+                <button onClick={status === 'won' ? restart : continueCity}>{status === 'won' ? '再守一次' : '半能量續戰'}</button>
+                <button className="primary-action" onClick={onBack}>返回地圖</button>
+              </div>
             </div>
           )}
         </div>
@@ -5973,7 +6052,10 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
           {status !== 'playing' && (
             <div className="lightbomb-result">
               <strong>{status === 'won' ? '三層通路開啟' : '光爆失誤'}</strong>
-              <button onClick={status === 'won' ? returnToSelect : restart}>{status === 'won' ? '重新選角' : '重新挑戰'}</button>
+              <div className="row-actions">
+                <button onClick={status === 'won' ? returnToSelect : restart}>{status === 'won' ? '重新選角' : '重新挑戰'}</button>
+                <button className="primary-action" onClick={onBack}>返回地圖</button>
+              </div>
             </div>
           )}
         </div>
@@ -6551,7 +6633,10 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
             <div className={`revelation-result ${status}`}>
               {status === 'won' && <img src={assets.revelation.released} alt="" />}
               <strong>{status === 'won' ? '冰晶王女解封' : '封印線崩解'}</strong>
-              <button onClick={restart}>{status === 'won' ? '再次啟示' : '重新挑戰'}</button>
+              <div className="row-actions">
+                <button onClick={restart}>{status === 'won' ? '再次啟示' : '重新挑戰'}</button>
+                <button className="primary-action" onClick={onBack}>返回地圖</button>
+              </div>
             </div>
           )}
         </div>
