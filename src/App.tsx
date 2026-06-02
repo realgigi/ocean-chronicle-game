@@ -6072,7 +6072,7 @@ function AncientRevelationGame({ onBack }: { onBack: () => void }) {
           return { ...enemy, attackAt: time + 2100 };
         });
 
-        const shotHitPlayer = nextShots.some((shot) => Math.hypot(shot.x - currentPlayer.x, shot.y - currentPlayer.y) < shot.size * 0.5 + 0.38);
+        const shotHitPlayer = currentPlayer.drawing && nextShots.some((shot) => Math.hypot(shot.x - currentPlayer.x, shot.y - currentPlayer.y) < shot.size * 0.5 + 0.38);
         const shotHitTrail = currentPlayer.drawing && trailRef.current.some((cell) => (
           nextShots.some((shot) => Math.hypot(shot.x - (cell.col + 0.5), shot.y - (cell.row + 0.5)) < shot.size * 0.5 + 0.3)
         ));
