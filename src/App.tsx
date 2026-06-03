@@ -7367,10 +7367,6 @@ function VideoLeadIn({
         onEnded={onComplete}
       />
       <div className="video-actions">
-        <button className="video-back-action" onClick={onBack}>
-          <ChevronLeft size={18} />
-          {backLabel}
-        </button>
         <button onClick={() => videoRef.current?.play()}>
           <Play size={18} />
           看影片
