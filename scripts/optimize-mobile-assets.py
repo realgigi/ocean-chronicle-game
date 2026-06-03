@@ -88,11 +88,20 @@ def main() -> None:
         ("videos/snowfield-highland-intro.mp4", "videos/snowfield-highland-intro.mp4"),
         ("videos/tide-tribe-intro.mp4", "videos/tide-tribe-intro.mp4"),
         ("videos/abyss-tower-intro.mp4", "videos/abyss-tower-intro.mp4"),
+        ("videos/undersea-city-intro.mp4", "videos/undersea-city-intro.mp4"),
+        ("videos/lightbomb-maze-intro.mp4", "videos/lightbomb-maze-intro.mp4"),
+        ("videos/kingdom-ice-intro.mp4", "videos/kingdom-ice-intro.mp4"),
     ]
     for src_rel, dest_rel in video_conversions:
         dest = MOBILE / dest_rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        copy2(PUBLIC / src_rel, dest)
+        src = PUBLIC / src_rel
+        if not src.exists():
+            src = MOBILE / src_rel
+        if not src.exists():
+            src = MOBILE / dest_rel
+        if src.resolve() != dest.resolve():
+            copy2(src, dest)
 
     total = sum(path.stat().st_size for path in MOBILE.rglob("*") if path.is_file())
     print(f"Optimized mobile assets: {total / 1024 / 1024:.2f} MB")

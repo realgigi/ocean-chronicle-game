@@ -4,6 +4,8 @@ let bgmTimers: number[] = [];
 let padOscillators: OscillatorNode[] = [];
 let bgmProfile: BgmProfile | null = null;
 let bgmIntensity = 1;
+let userVolume = 0.72;
+let muted = false;
 
 type GameSfx = 'select' | 'bomb' | 'blast' | 'powerup' | 'door' | 'hit' | 'kick' | 'step' | 'shoot' | 'score' | 'warning' | 'level';
 type BgmProfile = 'ocean' | 'lightbomb' | 'city' | 'snake';
@@ -18,15 +20,27 @@ const cityBassNotes = [55, 65.41, 82.41, 73.42, 55, 92.5, 98, 73.42];
 const snakeLeadNotes = [329.63, 392, 493.88, 587.33, 523.25, 440, 392, 493.88];
 const snakeBassNotes = [82.41, 98, 123.47, 110, 82.41, 130.81, 146.83, 98];
 
+function masterGainValue() {
+  return muted ? 0 : userVolume * 0.22;
+}
+
+function applyMasterGain() {
+  if (!audioContext || !masterGain) return;
+  const now = audioContext.currentTime;
+  masterGain.gain.cancelScheduledValues(now);
+  masterGain.gain.setTargetAtTime(masterGainValue(), now, 0.025);
+}
+
 function makeContext() {
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) return null;
   if (!audioContext) {
     audioContext = new AudioContextCtor();
     masterGain = audioContext.createGain();
-    masterGain.gain.value = 0.16;
+    masterGain.gain.value = masterGainValue();
     masterGain.connect(audioContext.destination);
   }
+  applyMasterGain();
   return audioContext;
 }
 
@@ -268,6 +282,16 @@ function startSnakeBgm(context: AudioContext) {
 
 export function setOceanBgmIntensity(intensity: number) {
   bgmIntensity = Math.max(0.8, Math.min(1.8, intensity));
+}
+
+export function setOceanMasterVolume(volume: number) {
+  userVolume = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 0.72;
+  applyMasterGain();
+}
+
+export function setOceanMuted(nextMuted: boolean) {
+  muted = nextMuted;
+  applyMasterGain();
 }
 
 export async function startOceanBgm(profile: BgmProfile = 'ocean', intensity = 1) {

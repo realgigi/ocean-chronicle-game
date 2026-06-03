@@ -1,6 +1,6 @@
 import { type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, Gem, Play, RotateCcw, Search, Sparkles, Swords, Zap } from 'lucide-react';
-import { playGameSfx, setOceanBgmIntensity, startOceanBgm, stopOceanBgm } from './audio';
+import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, Gem, Home, Play, RotateCcw, Search, Settings, Sparkles, Swords, Trash2, Volume2, VolumeX, Zap } from 'lucide-react';
+import { playGameSfx, setOceanBgmIntensity, setOceanMasterVolume, setOceanMuted, startOceanBgm, stopOceanBgm } from './audio';
 
 function assetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
@@ -23,8 +23,17 @@ type CompletionNotice = {
   best: number;
   status: 'first' | 'record' | 'saved';
 };
+type GameSettings = {
+  volume: number;
+  muted: boolean;
+};
 
 const progressStorageKey = 'ocean-chronicle-progress-v1';
+const settingsStorageKey = 'ocean-chronicle-settings-v1';
+const defaultGameSettings: GameSettings = {
+  volume: 0.72,
+  muted: false,
+};
 const sceneDisplayNames: Record<PlayableScene, string> = {
   combat: '北境邊防',
   memory: '珊瑚老街',
@@ -48,6 +57,18 @@ const sceneShortHints: Record<PlayableScene, string> = {
   city: '格戰射擊',
   lightbomb: '光爆開門',
   revelation: '圈地開圖',
+};
+const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
+  combat: [900, 1300, 1500],
+  memory: [700, 1100, 1450],
+  breakout: [1200, 1750, 2250],
+  minefield: [800, 1300, 1750],
+  snowfield: [950, 1350, 1750],
+  snake: [1600, 2400, 3150],
+  tower: [900, 1500, 2200],
+  city: [2600, 3300, 4100],
+  lightbomb: [3200, 3900, 4700],
+  revelation: [1600, 2300, 3000],
 };
 
 function loadGameProgress(): GameProgress {
@@ -80,10 +101,70 @@ function saveGameProgress(progress: GameProgress) {
   window.localStorage.setItem(progressStorageKey, JSON.stringify(progress));
 }
 
+function loadGameSettings(): GameSettings {
+  if (typeof window === 'undefined') return defaultGameSettings;
+  try {
+    const raw = window.localStorage.getItem(settingsStorageKey);
+    if (!raw) return defaultGameSettings;
+    const parsed = JSON.parse(raw) as Partial<GameSettings>;
+    return {
+      volume: Number.isFinite(parsed.volume) ? clamp(parsed.volume ?? defaultGameSettings.volume, 0, 1) : defaultGameSettings.volume,
+      muted: Boolean(parsed.muted),
+    };
+  } catch {
+    return defaultGameSettings;
+  }
+}
+
+function saveGameSettings(settings: GameSettings) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
+}
+
 function formatBestScore(score: number) {
   if (score <= 0) return '';
   if (score >= 10000) return `${(score / 10000).toFixed(1)}萬`;
   return `${Math.round(score)}`;
+}
+
+function progressStars(scene: PlayableScene, entry?: GameProgressEntry) {
+  if (!entry?.cleared) return 0;
+  const thresholds = sceneStarThresholds[scene];
+  return Math.max(1, thresholds.filter((threshold) => entry.best >= threshold).length);
+}
+
+function formatStars(count: number) {
+  return `${'★'.repeat(count)}${'☆'.repeat(3 - count)}`;
+}
+
+function totalProgressStars(progress: GameProgress) {
+  return (Object.keys(sceneDisplayNames) as PlayableScene[]).reduce((sum, scene) => sum + progressStars(scene, progress[scene]), 0);
+}
+
+function isPlayableScreen(screen: Screen): screen is PlayableScene {
+  return !['title', 'map', 'gallery', 'video', 'victory'].includes(screen);
+}
+
+const globalPauseEventName = 'ocean-chronicle-pause';
+let globalGamePaused = false;
+
+function setGlobalGamePaused(paused: boolean) {
+  globalGamePaused = paused;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(globalPauseEventName, { detail: paused }));
+  }
+}
+
+function useGamePausedRef() {
+  const pausedRef = useRef(globalGamePaused);
+  useEffect(() => {
+    const syncPaused = (event: Event) => {
+      pausedRef.current = Boolean((event as CustomEvent<boolean>).detail);
+    };
+    window.addEventListener(globalPauseEventName, syncPaused);
+    return () => window.removeEventListener(globalPauseEventName, syncPaused);
+  }, []);
+  return pausedRef;
 }
 
 function completionStatusLabel(status: CompletionNotice['status']) {
@@ -949,7 +1030,7 @@ const snakeCols = 24;
 const snakeRows = 36;
 const snakeViewCols = 10;
 const snakeViewRows = 16;
-const snakeTarget = 35;
+const snakeTarget = 32;
 const snakeStart: SnakeCell[] = [
   { col: 12, row: 27 },
   { col: 12, row: 28 },
@@ -991,9 +1072,9 @@ const cityStartingBaseHp = 4;
 const cityStartingArmor = 4;
 const cityMaxHp = 5;
 const cityLevels: CityLevelConfig[] = [
-  { level: 1, title: '第一防線', targetKills: 18, enemyCap: 5, spawnMs: 2300, enemyMoveDelayScale: 1, enemyShotDelayScale: 1, enemyShotSpeed: 0.033, eliteChance: 0.32, dropChance: 0.44 },
-  { level: 2, title: '第二防線', targetKills: 24, enemyCap: 7, spawnMs: 1850, enemyMoveDelayScale: 0.84, enemyShotDelayScale: 0.8, enemyShotSpeed: 0.037, eliteChance: 0.42, dropChance: 0.48 },
-  { level: 3, title: '第三防線', targetKills: 30, enemyCap: 9, spawnMs: 1450, enemyMoveDelayScale: 0.68, enemyShotDelayScale: 0.64, enemyShotSpeed: 0.041, eliteChance: 0.54, dropChance: 0.52 },
+  { level: 1, title: '第一防線', targetKills: 16, enemyCap: 4, spawnMs: 2500, enemyMoveDelayScale: 1.08, enemyShotDelayScale: 1.12, enemyShotSpeed: 0.031, eliteChance: 0.26, dropChance: 0.5 },
+  { level: 2, title: '第二防線', targetKills: 22, enemyCap: 6, spawnMs: 2100, enemyMoveDelayScale: 0.9, enemyShotDelayScale: 0.88, enemyShotSpeed: 0.034, eliteChance: 0.36, dropChance: 0.52 },
+  { level: 3, title: '第三防線', targetKills: 28, enemyCap: 8, spawnMs: 1750, enemyMoveDelayScale: 0.76, enemyShotDelayScale: 0.74, enemyShotSpeed: 0.038, eliteChance: 0.48, dropChance: 0.55 },
 ];
 const cityMaxLevel = cityLevels.length;
 const cityBase = { x: cityCellCenter(15.5), y: cityCellCenter(29.5), size: cityCellSize * 2 };
@@ -1057,9 +1138,9 @@ const lightBombViewCols = 10;
 const lightBombKickStepMs = 82;
 const lightBombTurnRetryMs = 62;
 const lightBombLevels: LightBombLevelConfig[] = [
-  { stage: 1, title: '第一迷宮', enemyCount: 20, enemyDelayScale: 1, powerupCount: 12, musicIntensity: 1 },
-  { stage: 2, title: '第二迷宮', enemyCount: 26, enemyDelayScale: 0.82, powerupCount: 14, musicIntensity: 1.28 },
-  { stage: 3, title: '第三迷宮', enemyCount: 32, enemyDelayScale: 0.66, powerupCount: 16, musicIntensity: 1.55 },
+  { stage: 1, title: '第一迷宮', enemyCount: 18, enemyDelayScale: 1.08, powerupCount: 13, musicIntensity: 0.96 },
+  { stage: 2, title: '第二迷宮', enemyCount: 24, enemyDelayScale: 0.9, powerupCount: 15, musicIntensity: 1.2 },
+  { stage: 3, title: '第三迷宮', enemyCount: 30, enemyDelayScale: 0.75, powerupCount: 17, musicIntensity: 1.45 },
 ];
 const lightBombMaxStage = lightBombLevels.length;
 const lightBombPlayerStart: LightBombPlayer = {
@@ -1104,7 +1185,7 @@ const revelationCols = 44;
 const revelationRows = 72;
 const revelationSafeBorder = 2;
 const revelationTargetPercent = 72;
-const revelationTimeLimitMs = 150000;
+const revelationTimeLimitMs = 165000;
 const revelationStart = { col: Math.floor(revelationCols / 2), row: revelationRows - revelationSafeBorder };
 const revelationEnemyKinds: RevelationEnemyKind[] = ['jellyfish', 'urchin', 'squid', 'anemone', 'urchin', 'squid', 'anemone', 'urchin', 'squid', 'anemone'];
 const revelationPowerKinds: RevelationPowerKind[] = ['speed', 'freeze', 'reveal', 'shield', 'slow', 'life', 'freeze', 'reveal', 'speed', 'shield'];
@@ -2257,6 +2338,9 @@ export default function App() {
   useVisualViewportFrame();
   const [screen, setScreen] = useState<Screen>(() => initialScreenFromQuery());
   const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress());
+  const [gameSettings, setGameSettings] = useState<GameSettings>(() => loadGameSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [screenResetKey, setScreenResetKey] = useState(0);
   const [completionNotice, setCompletionNotice] = useState<CompletionNotice | null>(null);
   const [videoLeadIn, setVideoLeadIn] = useState<VideoLeadInConfig>(videoLeadIns.startGame);
   const progressRef = useRef(progress);
@@ -2293,6 +2377,21 @@ export default function App() {
   }, [progress]);
 
   useEffect(() => {
+    setOceanMasterVolume(gameSettings.volume);
+    setOceanMuted(gameSettings.muted);
+    saveGameSettings(gameSettings);
+  }, [gameSettings]);
+
+  useEffect(() => {
+    setSettingsOpen(false);
+  }, [screen]);
+
+  useEffect(() => {
+    setGlobalGamePaused(settingsOpen && isPlayableScreen(screen));
+    return () => setGlobalGamePaused(false);
+  }, [screen, settingsOpen]);
+
+  useEffect(() => {
     if (!completionNotice) return undefined;
     const timer = window.setTimeout(() => setCompletionNotice(null), 3600);
     return () => window.clearTimeout(timer);
@@ -2322,6 +2421,25 @@ export default function App() {
     stopOceanBgm();
     setScreen('map');
   }, []);
+
+  const updateGameSettings = useCallback((patch: Partial<GameSettings>) => {
+    setGameSettings((current) => ({ ...current, ...patch }));
+  }, []);
+
+  const resetProgress = useCallback(() => {
+    progressRef.current = {};
+    setProgress({});
+    setCompletionNotice(null);
+    if (typeof window !== 'undefined') window.localStorage.removeItem(progressStorageKey);
+    playGameSfx('warning');
+  }, []);
+
+  const restartCurrentScreen = useCallback(() => {
+    if (!isPlayableScreen(screen)) return;
+    playGameSfx('select');
+    setScreenResetKey((value) => value + 1);
+    setSettingsOpen(false);
+  }, [screen]);
 
   const openVideoLeadIn = (leadIn: VideoLeadInConfig) => {
     stopOceanBgm();
@@ -2413,18 +2531,19 @@ export default function App() {
           />
         )}
         {screen === 'gallery' && <CharacterGallery onBack={showTitle} />}
-        {screen === 'memory' && <MemoryMatchGame onBack={showMap} onComplete={(score) => recordGameProgress('memory', score)} />}
-        {screen === 'breakout' && <IceBreakoutGame onBack={showMap} onComplete={(score) => recordGameProgress('breakout', score)} />}
-        {screen === 'minefield' && <MinefieldGame onBack={showMap} onComplete={(score) => recordGameProgress('minefield', score)} />}
-        {screen === 'snowfield' && <SnowfieldGame onBack={showMap} onComplete={(score) => recordGameProgress('snowfield', score)} />}
-        {screen === 'snake' && <TideSnakeGame onBack={showMap} onComplete={(score) => recordGameProgress('snake', score)} />}
-        {screen === 'tower' && <AbyssTowerGame onBack={showMap} onComplete={(score) => recordGameProgress('tower', score)} />}
-        {screen === 'city' && <UnderseaCityGame onBack={showMap} onComplete={(score) => recordGameProgress('city', score)} />}
-        {screen === 'lightbomb' && <LightBombMazeGame onBack={showMap} onComplete={(score) => recordGameProgress('lightbomb', score)} />}
-        {screen === 'revelation' && <AncientRevelationGame onBack={showMap} onComplete={(score) => recordGameProgress('revelation', score)} />}
+        {screen === 'memory' && <MemoryMatchGame key={`memory-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('memory', score)} />}
+        {screen === 'breakout' && <IceBreakoutGame key={`breakout-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('breakout', score)} />}
+        {screen === 'minefield' && <MinefieldGame key={`minefield-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('minefield', score)} />}
+        {screen === 'snowfield' && <SnowfieldGame key={`snowfield-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('snowfield', score)} />}
+        {screen === 'snake' && <TideSnakeGame key={`snake-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('snake', score)} />}
+        {screen === 'tower' && <AbyssTowerGame key={`tower-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('tower', score)} />}
+        {screen === 'city' && <UnderseaCityGame key={`city-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('city', score)} />}
+        {screen === 'lightbomb' && <LightBombMazeGame key={`lightbomb-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('lightbomb', score)} />}
+        {screen === 'revelation' && <AncientRevelationGame key={`revelation-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('revelation', score)} />}
         {screen === 'video' && <VideoLeadIn leadIn={videoLeadIn} onComplete={completeVideoLeadIn} />}
         {screen === 'combat' && (
           <CombatStage
+            key={`combat-${screenResetKey}`}
             onVictory={() => {
               stopOceanBgm();
               recordGameProgress('combat', 1500);
@@ -2434,6 +2553,18 @@ export default function App() {
           />
         )}
         {screen === 'victory' && <VictoryCard onMap={showMap} onReplay={openLeadInOrCombat} />}
+        <GlobalSettingsPanel
+          open={settingsOpen}
+          settings={gameSettings}
+          canReturnMap={screen !== 'title' && screen !== 'map' && screen !== 'video'}
+          canRestart={isPlayableScreen(screen)}
+          onToggleOpen={() => setSettingsOpen((open) => !open)}
+          onClose={() => setSettingsOpen(false)}
+          onSettingsChange={updateGameSettings}
+          onReturnMap={showMap}
+          onRestart={restartCurrentScreen}
+          onResetProgress={resetProgress}
+        />
         {completionNotice && <CompletionToast notice={completionNotice} />}
       </div>
     </main>
@@ -2466,6 +2597,107 @@ function CompletionToast({ notice }: { notice: CompletionNotice }) {
       <small>
         本局 {formatBestScore(notice.score) || '0'} · 最佳 {formatBestScore(notice.best) || '0'}
       </small>
+    </div>
+  );
+}
+
+function GlobalSettingsPanel({
+  open,
+  settings,
+  canReturnMap,
+  canRestart,
+  onToggleOpen,
+  onClose,
+  onSettingsChange,
+  onReturnMap,
+  onRestart,
+  onResetProgress,
+}: {
+  open: boolean;
+  settings: GameSettings;
+  canReturnMap: boolean;
+  canRestart: boolean;
+  onToggleOpen: () => void;
+  onClose: () => void;
+  onSettingsChange: (patch: Partial<GameSettings>) => void;
+  onReturnMap: () => void;
+  onRestart: () => void;
+  onResetProgress: () => void;
+}) {
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  useEffect(() => {
+    if (!open) setConfirmReset(false);
+  }, [open]);
+
+  const volumePercent = Math.round(settings.volume * 100);
+
+  return (
+    <div
+      className={`global-settings ${open ? 'open' : ''}`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerMove={(event) => event.stopPropagation()}
+    >
+      <button className="global-settings-toggle" onClick={onToggleOpen} aria-label={open ? '關閉設定' : '開啟設定'}>
+        <Settings size={18} />
+      </button>
+      {open && (
+        <>
+          <button className="global-settings-scrim" onClick={onClose} aria-label="關閉設定" />
+          <div className="settings-panel" role="dialog" aria-label="遊戲設定">
+            <div className="settings-panel-head">
+              <strong>設定</strong>
+              <span>{canRestart ? '暫停中' : '全域'}</span>
+              <button className="icon-button" onClick={onClose} aria-label="關閉設定">
+                <ChevronUp size={18} />
+              </button>
+            </div>
+            <div className="settings-volume">
+              <button
+                className={`settings-mute ${settings.muted ? 'muted' : ''}`}
+                onClick={() => onSettingsChange({ muted: !settings.muted })}
+                aria-label={settings.muted ? '取消靜音' : '靜音'}
+              >
+                {settings.muted ? <VolumeX size={19} /> : <Volume2 size={19} />}
+              </button>
+              <label>
+                <span>音量 {volumePercent}%</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={volumePercent}
+                  onChange={(event) => onSettingsChange({ volume: clamp(Number(event.currentTarget.value) / 100, 0, 1), muted: false })}
+                />
+              </label>
+            </div>
+            <div className="settings-actions">
+              <button onClick={onRestart} disabled={!canRestart}>
+                <RotateCcw size={17} />
+                重新開始
+              </button>
+              <button onClick={onReturnMap} disabled={!canReturnMap}>
+                <Home size={17} />
+                回地圖
+              </button>
+              <button
+                className={`settings-danger ${confirmReset ? 'confirm' : ''}`}
+                onClick={() => {
+                  if (!confirmReset) {
+                    setConfirmReset(true);
+                    return;
+                  }
+                  onResetProgress();
+                  setConfirmReset(false);
+                }}
+              >
+                <Trash2 size={17} />
+                {confirmReset ? '再按一次清除' : '重置進度'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -2515,30 +2747,32 @@ function EpisodeMap({
     { name: '王國冰晶', scene: 'revelation', style: 'revelation', onClick: onRevelation },
   ];
   const clearedCount = nodes.filter(({ scene }) => progress[scene]?.cleared).length;
+  const starCount = totalProgressStars(progress);
   return (
     <section className="screen map-screen">
       <Header title="劇情地圖" onBack={onBack} />
       <div className="map-progress-summary">
         <strong>已通關 {clearedCount}/{nodes.length}</strong>
-        <span>本機紀錄</span>
+        <span>星等 {starCount}/{nodes.length * 3}</span>
       </div>
       <div className="map-path">
         {nodes.map(({ name, scene, style, onClick }) => {
           const entry = progress[scene];
           const cleared = Boolean(entry?.cleared);
           const best = entry?.best ?? 0;
+          const stars = progressStars(scene, entry);
           return (
           <button
             key={name}
             className={`map-node ${style}${cleared ? ' cleared' : ''}`}
             onClick={onClick}
-            aria-label={`${name}，${cleared ? `已通關，最佳 ${formatBestScore(best) || '未計分'}` : sceneShortHints[scene]}`}
+            aria-label={`${name}，${cleared ? `已通關，${stars} 星，最佳 ${formatBestScore(best) || '未計分'}` : sceneShortHints[scene]}`}
           >
             <span>{name}</span>
             <small className="map-node-meta">
               {cleared ? (
                 <>
-                  已通關
+                  <em>{formatStars(stars)}</em>
                   {best > 0 && <strong>{formatBestScore(best)}</strong>}
                 </>
               ) : (
@@ -2722,6 +2956,7 @@ function MemoryMatchGame({ onBack, onComplete }: { onBack: () => void; onComplet
 
 function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplete: GameCompleteHandler }) {
   const fieldRef = useRef<HTMLDivElement | null>(null);
+  const pausedRef = useGamePausedRef();
   const nextId = useRef(1);
   const rafRef = useRef<number | null>(null);
   const lastTime = useRef<number | null>(null);
@@ -2849,6 +3084,11 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
 
   useEffect(() => {
     const tick = (time: number) => {
+      if (pausedRef.current) {
+        lastTime.current = time;
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
       const last = lastTime.current ?? time;
       const dt = Math.min(34, time - last);
       lastTime.current = time;
@@ -3407,17 +3647,18 @@ function MinefieldGame({ onBack, onComplete }: { onBack: () => void; onComplete:
 
 function createSnowUnits(): SnowUnit[] {
   return [
-    { id: 101, side: 'enemy', x: 23, y: 22, hp: 100, cooldown: 980, moveDir: 1 },
-    { id: 102, side: 'enemy', x: 50, y: 18, hp: 100, cooldown: 1160, moveDir: -1 },
-    { id: 103, side: 'enemy', x: 77, y: 22, hp: 100, cooldown: 1070, moveDir: 1 },
-    { id: 1, side: 'ally', x: 23, y: 76, hp: 100, cooldown: 820, moveDir: 0 },
-    { id: 2, side: 'ally', x: 50, y: 82, hp: 100, cooldown: 965, moveDir: 0 },
-    { id: 3, side: 'ally', x: 77, y: 76, hp: 100, cooldown: 890, moveDir: 0 },
+    { id: 101, side: 'enemy', x: 23, y: 22, hp: 90, cooldown: 1320, moveDir: 1 },
+    { id: 102, side: 'enemy', x: 50, y: 18, hp: 90, cooldown: 1480, moveDir: -1 },
+    { id: 103, side: 'enemy', x: 77, y: 22, hp: 90, cooldown: 1400, moveDir: 1 },
+    { id: 1, side: 'ally', x: 23, y: 76, hp: 105, cooldown: 740, moveDir: 0 },
+    { id: 2, side: 'ally', x: 50, y: 82, hp: 105, cooldown: 830, moveDir: 0 },
+    { id: 3, side: 'ally', x: 77, y: 76, hp: 105, cooldown: 790, moveDir: 0 },
   ];
 }
 
 function SnowfieldGame({ onBack, onComplete }: { onBack: () => void; onComplete: GameCompleteHandler }) {
   const arenaRef = useRef<HTMLDivElement | null>(null);
+  const pausedRef = useGamePausedRef();
   const rafRef = useRef<number | null>(null);
   const lastTime = useRef<number | null>(null);
   const nextSnowballId = useRef(1);
@@ -3487,6 +3728,11 @@ function SnowfieldGame({ onBack, onComplete }: { onBack: () => void; onComplete:
 
   useEffect(() => {
     const tick = (time: number) => {
+      if (pausedRef.current) {
+        lastTime.current = time;
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
       const last = lastTime.current ?? time;
       const dt = Math.min(34, time - last);
       lastTime.current = time;
@@ -3517,7 +3763,7 @@ function SnowfieldGame({ onBack, onComplete }: { onBack: () => void; onComplete:
         nextUnits.forEach((unit) => {
           if (unit.hp <= 0) return;
           if (unit.side === 'enemy') {
-            unit.x += unit.moveDir * dt * 0.014;
+            unit.x += unit.moveDir * dt * 0.011;
             unit.y += Math.sin(time * 0.0011 + unit.id) * 0.018 * dt;
             if (unit.x < 14 || unit.x > 86) {
               unit.x = clamp(unit.x, 14, 86);
@@ -3548,7 +3794,7 @@ function SnowfieldGame({ onBack, onComplete }: { onBack: () => void; onComplete:
             vx: (dx / length) * speed,
             vy: (dy / length) * speed,
           });
-          unit.cooldown = unit.side === 'ally' ? 1040 + Math.random() * 250 : 1250 + Math.random() * 300;
+          unit.cooldown = unit.side === 'ally' ? 860 + Math.random() * 220 : 1450 + Math.random() * 380;
         });
 
         [...snowballsRef.current, ...spawned].forEach((ball) => {
@@ -3692,6 +3938,7 @@ function SnowfieldGame({ onBack, onComplete }: { onBack: () => void; onComplete:
 
 function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete: GameCompleteHandler }) {
   const snakeBoardRef = useRef<HTMLDivElement | null>(null);
+  const pausedRef = useGamePausedRef();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const movePointerRef = useRef<number | null>(null);
   const directionRef = useRef<SnakeDirection>('up');
@@ -3874,6 +4121,7 @@ function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete:
 
   useEffect(() => {
     const timer = window.setInterval(() => {
+      if (pausedRef.current) return;
       if (statusRef.current !== 'playing') return;
       const now = performance.now();
       const activeObstacles = obstaclesRef.current.filter((obstacle) => obstacle.expiresAt > now);
@@ -3982,6 +4230,7 @@ function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete:
 
   useEffect(() => {
     const timer = window.setInterval(() => {
+      if (pausedRef.current) return;
       if (statusRef.current !== 'playing') return;
       const now = performance.now();
       const activeObstacles = obstaclesRef.current.filter((obstacle) => obstacle.expiresAt > now);
@@ -3996,6 +4245,7 @@ function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete:
 
   useEffect(() => {
     const timer = window.setInterval(() => {
+      if (pausedRef.current) return;
       if (statusRef.current !== 'playing' || powerupRef.current) return;
       const nextPowerup = placeSnakePowerup(snakeRef.current, foodRef.current, obstaclesRef.current);
       powerupRef.current = nextPowerup;
@@ -4006,6 +4256,7 @@ function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete:
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (pausedRef.current) return;
       if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') changeDirection('up');
       if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') changeDirection('down');
       if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') changeDirection('left');
@@ -4046,6 +4297,23 @@ function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete:
     setPadDirection(null);
     setPadVector({ x: 0, y: 0 });
   }, []);
+
+  useEffect(() => {
+    const releaseMatchingPad = (event: PointerEvent) => {
+      if (movePointerRef.current === event.pointerId) releaseSnakePad();
+    };
+    const clearPad = () => releaseSnakePad();
+    window.addEventListener('pointerup', releaseMatchingPad);
+    window.addEventListener('pointercancel', releaseMatchingPad);
+    window.addEventListener('blur', clearPad);
+    window.addEventListener('pagehide', clearPad);
+    return () => {
+      window.removeEventListener('pointerup', releaseMatchingPad);
+      window.removeEventListener('pointercancel', releaseMatchingPad);
+      window.removeEventListener('blur', clearPad);
+      window.removeEventListener('pagehide', clearPad);
+    };
+  }, [releaseSnakePad]);
 
   const snakeViewportStyle: CSSProperties = {
     width: `${snakeViewportWidthPx}px`,
@@ -4201,6 +4469,7 @@ function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete:
 function AbyssTowerGame({ onBack, onComplete }: { onBack: () => void; onComplete: GameCompleteHandler }) {
   const initialPlatforms = useMemo(() => createTowerPlatforms(), []);
   const arenaRef = useRef<HTMLDivElement | null>(null);
+  const pausedRef = useGamePausedRef();
   const rafRef = useRef<number | null>(null);
   const lastTime = useRef<number | null>(null);
   const nextPlatformId = useRef(20);
@@ -4334,6 +4603,11 @@ function AbyssTowerGame({ onBack, onComplete }: { onBack: () => void; onComplete
 
   useEffect(() => {
     const tick = (time: number) => {
+      if (pausedRef.current) {
+        lastTime.current = time;
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
       const last = lastTime.current ?? time;
       const dt = Math.min(34, time - last);
       lastTime.current = time;
@@ -4598,6 +4872,7 @@ function AbyssTowerGame({ onBack, onComplete }: { onBack: () => void; onComplete
 function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComplete: GameCompleteHandler }) {
   const startingTiles = useMemo(() => createCityTiles(), []);
   const arenaRef = useRef<HTMLDivElement | null>(null);
+  const pausedRef = useGamePausedRef();
   const rafRef = useRef<number | null>(null);
   const lastTime = useRef<number | null>(null);
   const nextId = useRef(1);
@@ -4908,6 +5183,26 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
   }, [setFirePressed]);
 
   useEffect(() => {
+    const releaseMatchingMove = (event: PointerEvent) => {
+      if (movePointerRef.current === event.pointerId) releaseMovePad();
+    };
+    const clearControls = () => {
+      releaseMovePad();
+      releaseCityFire();
+    };
+    window.addEventListener('pointerup', releaseMatchingMove);
+    window.addEventListener('pointercancel', releaseMatchingMove);
+    window.addEventListener('blur', clearControls);
+    window.addEventListener('pagehide', clearControls);
+    return () => {
+      window.removeEventListener('pointerup', releaseMatchingMove);
+      window.removeEventListener('pointercancel', releaseMatchingMove);
+      window.removeEventListener('blur', clearControls);
+      window.removeEventListener('pagehide', clearControls);
+    };
+  }, [releaseCityFire, releaseMovePad]);
+
+  useEffect(() => {
     const directionFromKey = (event: KeyboardEvent): CityDirection | null => {
       if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') return 'up';
       if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') return 'down';
@@ -4947,6 +5242,11 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
 
   useEffect(() => {
     const tick = (time: number) => {
+      if (pausedRef.current) {
+        lastTime.current = time;
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
       const last = lastTime.current ?? time;
       const dt = Math.min(34, time - last);
       lastTime.current = time;
@@ -5451,6 +5751,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
 function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onComplete: GameCompleteHandler }) {
   const firstLevel = useMemo(() => createLightBombLevel(lightBombLevelConfig(1)), []);
   const arenaRef = useRef<HTMLDivElement | null>(null);
+  const pausedRef = useGamePausedRef();
   const rafRef = useRef<number | null>(null);
   const lastTime = useRef<number | null>(null);
   const nextId = useRef(1000);
@@ -5732,6 +6033,23 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
   }, [placeOrTriggerBomb]);
 
   useEffect(() => {
+    const releaseMatchingPad = (event: PointerEvent) => {
+      if (movePointerRef.current === event.pointerId) releasePad();
+    };
+    const clearPad = () => releasePad();
+    window.addEventListener('pointerup', releaseMatchingPad);
+    window.addEventListener('pointercancel', releaseMatchingPad);
+    window.addEventListener('blur', clearPad);
+    window.addEventListener('pagehide', clearPad);
+    return () => {
+      window.removeEventListener('pointerup', releaseMatchingPad);
+      window.removeEventListener('pointercancel', releaseMatchingPad);
+      window.removeEventListener('blur', clearPad);
+      window.removeEventListener('pagehide', clearPad);
+    };
+  }, [releasePad]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
       const direction = event.key === 'ArrowUp' || key === 'w' ? 'up' : event.key === 'ArrowDown' || key === 's' ? 'down' : event.key === 'ArrowLeft' || key === 'a' ? 'left' : event.key === 'ArrowRight' || key === 'd' ? 'right' : null;
@@ -5759,6 +6077,11 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
 
   useEffect(() => {
     const tick = (time: number) => {
+      if (pausedRef.current) {
+        lastTime.current = time;
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
       const last = lastTime.current ?? time;
       const dt = Math.min(34, time - last);
       lastTime.current = time;
@@ -6010,7 +6333,7 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
                 key={character.id}
                 onClick={() => startRun(character.id)}
               >
-                <img src={character.image} alt="" />
+                <img src={character.image} alt="" loading="lazy" decoding="async" />
                 <strong>{character.name}</strong>
                 <span>{character.ability}</span>
               </button>
@@ -6110,6 +6433,7 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
 
 function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onComplete: GameCompleteHandler }) {
   const arenaRef = useRef<HTMLDivElement | null>(null);
+  const pausedRef = useGamePausedRef();
   const rafRef = useRef<number | null>(null);
   const movePointerRef = useRef<number | null>(null);
   const moveIntentRef = useRef<DirectionPadIntent>(null);
@@ -6357,6 +6681,11 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
 
   useEffect(() => {
     const tick = (time: number) => {
+      if (pausedRef.current) {
+        lastTickRef.current = time;
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
       const last = lastTickRef.current || time;
       const dt = Math.min(0.05, (time - last) / 1000);
       lastTickRef.current = time;
@@ -6556,6 +6885,23 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     setPadVector({ x: 0, y: 0 });
   }, []);
 
+  useEffect(() => {
+    const releaseMatchingPad = (event: PointerEvent) => {
+      if (movePointerRef.current === event.pointerId) releasePad();
+    };
+    const clearPad = () => releasePad();
+    window.addEventListener('pointerup', releaseMatchingPad);
+    window.addEventListener('pointercancel', releaseMatchingPad);
+    window.addEventListener('blur', clearPad);
+    window.addEventListener('pagehide', clearPad);
+    return () => {
+      window.removeEventListener('pointerup', releaseMatchingPad);
+      window.removeEventListener('pointercancel', releaseMatchingPad);
+      window.removeEventListener('blur', clearPad);
+      window.removeEventListener('pagehide', clearPad);
+    };
+  }, [releasePad]);
+
   const cellPx = Math.max(18, Math.min((arenaSize.width || 360) / 11, (arenaSize.height || 560) / 18));
   const worldWidth = cellPx * revelationCols;
   const worldHeight = cellPx * revelationRows;
@@ -6733,7 +7079,7 @@ function CharacterGallery({ onBack }: { onBack: () => void }) {
       <div className="gallery-list" ref={galleryRef} onScroll={handleGalleryScroll}>
         {characters.map((character) => (
           <article className="character-card" key={character.id} aria-label={`${character.name}，${character.role}`}>
-            <img src={character.poster} alt={`${character.name}角色海報`} />
+            <img src={character.poster} alt={`${character.name}角色海報`} loading="lazy" decoding="async" />
           </article>
         ))}
       </div>
@@ -6797,6 +7143,7 @@ function VideoLeadIn({ leadIn, onComplete }: { leadIn: VideoLeadInConfig; onComp
 
 function CombatStage({ onVictory, onExit }: { onVictory: () => void; onExit: () => void }) {
   const arenaRef = useRef<HTMLDivElement | null>(null);
+  const pausedRef = useGamePausedRef();
   const nextId = useRef(1);
   const attackTimer = useRef(0);
   const bossTimer = useRef(0);
@@ -6976,6 +7323,11 @@ function CombatStage({ onVictory, onExit }: { onVictory: () => void; onExit: () 
 
   useEffect(() => {
     const tick = (time: number) => {
+      if (pausedRef.current) {
+        lastTime.current = time;
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
       const last = lastTime.current ?? time;
       const dt = Math.min(48, time - last);
       lastTime.current = time;
