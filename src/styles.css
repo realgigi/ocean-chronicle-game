@@ -809,10 +809,8 @@ button:disabled {
 
 .video-screen {
   position: relative;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 8px;
-  padding: max(50px, calc(14px + env(safe-area-inset-top))) 14px max(12px, env(safe-area-inset-bottom));
+  display: block;
+  padding: 0;
   background: #030c14;
 }
 
@@ -827,32 +825,43 @@ button:disabled {
 }
 
 .video-copy {
+  position: absolute;
+  z-index: 3;
+  top: max(12px, env(safe-area-inset-top));
+  left: max(58px, calc(env(safe-area-inset-left) + 58px));
+  right: max(58px, calc(env(safe-area-inset-right) + 58px));
   min-height: 0;
-  padding-left: 46px;
   overflow: hidden;
 }
 
 .video-copy span {
-  display: block;
+  display: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .video-copy h2 {
-  display: -webkit-box;
-  max-height: 2.28em;
-  margin: 3px 0 0;
+  display: block;
+  margin: 0;
   overflow: hidden;
-  font-size: 1.08rem;
-  line-height: 1.14;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  color: #eafcff;
+  font-size: 1rem;
+  line-height: 40px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lead-video {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  z-index: 1;
+  top: max(58px, calc(env(safe-area-inset-top) + 52px));
+  right: 10px;
+  bottom: max(66px, calc(env(safe-area-inset-bottom) + 58px));
+  left: 10px;
+  width: auto;
+  height: auto;
   min-height: 0;
   border-radius: 8px;
   object-fit: contain;
@@ -860,6 +869,11 @@ button:disabled {
 }
 
 .video-actions {
+  position: absolute;
+  z-index: 4;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  left: max(12px, env(safe-area-inset-left));
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
