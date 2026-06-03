@@ -252,6 +252,26 @@ button:disabled {
   accent-color: #86efff;
 }
 
+.settings-toggle-row {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: #c9f5ff;
+  background: rgba(24, 70, 93, 0.44);
+  box-shadow: inset 0 0 0 1px rgba(168, 235, 255, 0.16);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.settings-toggle-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: #86efff;
+}
+
 .settings-mute {
   width: 42px;
   height: 42px;
@@ -292,6 +312,55 @@ button:disabled {
 .settings-actions .settings-danger.confirm {
   color: #221005;
   background: linear-gradient(135deg, #ffd0a0, #ff9878);
+}
+
+.grid-debug-overlay {
+  position: absolute;
+  z-index: 35;
+  top: max(58px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 3px 8px;
+  max-width: min(74%, 260px);
+  padding: 8px 9px;
+  border-radius: 8px;
+  color: #eafdff;
+  background: rgba(3, 13, 22, 0.78);
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.32),
+    inset 0 0 0 1px rgba(141, 235, 255, 0.24);
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 10px;
+  line-height: 1.15;
+  pointer-events: none;
+  backdrop-filter: blur(7px);
+}
+
+.grid-debug-overlay strong {
+  grid-column: 1 / -1;
+  color: #fff0a5;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.grid-debug-overlay span {
+  display: contents;
+}
+
+.grid-debug-overlay b {
+  color: #8eefff;
+  font-weight: 900;
+}
+
+.grid-debug-overlay i {
+  min-width: 0;
+  overflow: hidden;
+  color: #f8ffff;
+  font-style: normal;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .screen > * {

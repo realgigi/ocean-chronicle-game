@@ -26,6 +26,7 @@ type CompletionNotice = {
 type GameSettings = {
   volume: number;
   muted: boolean;
+  debugGrid: boolean;
 };
 
 const progressStorageKey = 'ocean-chronicle-progress-v1';
@@ -33,6 +34,7 @@ const settingsStorageKey = 'ocean-chronicle-settings-v1';
 const defaultGameSettings: GameSettings = {
   volume: 0.72,
   muted: false,
+  debugGrid: false,
 };
 const sceneDisplayNames: Record<PlayableScene, string> = {
   combat: '北境邊防',
@@ -110,6 +112,7 @@ function loadGameSettings(): GameSettings {
     return {
       volume: Number.isFinite(parsed.volume) ? clamp(parsed.volume ?? defaultGameSettings.volume, 0, 1) : defaultGameSettings.volume,
       muted: Boolean(parsed.muted),
+      debugGrid: Boolean(parsed.debugGrid),
     };
   } catch {
     return defaultGameSettings;
@@ -580,6 +583,15 @@ type DirectionPadVector = {
 type DirectionPadInput = {
   intent: DirectionPadIntent;
   vector: DirectionPadVector;
+};
+type GridMoveTiming = {
+  stepMs: number;
+  retryMs: number;
+  turnBufferMs: number;
+};
+type GridDebugItem = {
+  label: string;
+  value: string | number | boolean;
 };
 type LightBombPadIntent = DirectionPadIntent;
 type LightBombPadVector = DirectionPadVector;
@@ -1500,6 +1512,27 @@ function directionPadIntentsEqual(a: DirectionPadIntent, b: DirectionPadIntent) 
   return a?.primary === b?.primary && a?.secondary === b?.secondary;
 }
 
+function directionPadIntentLabel(intent: DirectionPadIntent) {
+  if (!intent) return 'none';
+  return intent.secondary ? `${intent.primary}+${intent.secondary}` : intent.primary;
+}
+
+function gridNextStepAt(time: number, moved: boolean, timing: GridMoveTiming) {
+  return time + (moved ? timing.stepMs : timing.retryMs);
+}
+
+function gridTurnBufferAt(currentNextAt: number, time: number, timing: GridMoveTiming) {
+  return Math.min(currentNextAt, time + timing.turnBufferMs);
+}
+
+function gridDistanceSettled(logical: { x: number; y: number }, visual: { x: number; y: number }, threshold: number) {
+  return Math.hypot(visual.x - logical.x, visual.y - logical.y) <= threshold;
+}
+
+function gridCellLabel(col: number, row: number) {
+  return `${col},${row}`;
+}
+
 function cityCellCenter(index: number) {
   return (index + 0.5) * cityCellSize;
 }
@@ -2043,9 +2076,11 @@ function snakeCameraWithDeadZone(previous: { col: number; row: number }, head: S
 
 function snakeSmoothCamera(previous: { col: number; row: number }, head: SnakeCell) {
   const target = snakeCameraWithDeadZone(previous, head);
+  const nextCol = previous.col + (target.col - previous.col) * 0.28;
+  const nextRow = previous.row + (target.row - previous.row) * 0.28;
   return {
-    col: clamp(previous.col + (target.col - previous.col) * 0.48, 0, snakeCols - snakeViewCols),
-    row: clamp(previous.row + (target.row - previous.row) * 0.48, 0, snakeRows - snakeViewRows),
+    col: Math.abs(target.col - previous.col) < 0.015 ? previous.col : clamp(nextCol, 0, snakeCols - snakeViewCols),
+    row: Math.abs(target.row - previous.row) < 0.015 ? previous.row : clamp(nextRow, 0, snakeRows - snakeViewRows),
   };
 }
 
@@ -2538,10 +2573,10 @@ export default function App() {
         {screen === 'breakout' && <IceBreakoutGame key={`breakout-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('breakout', score)} />}
         {screen === 'minefield' && <MinefieldGame key={`minefield-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('minefield', score)} />}
         {screen === 'snowfield' && <SnowfieldGame key={`snowfield-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('snowfield', score)} />}
-        {screen === 'snake' && <TideSnakeGame key={`snake-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('snake', score)} />}
+        {screen === 'snake' && <TideSnakeGame key={`snake-${screenResetKey}`} debugGrid={gameSettings.debugGrid} onBack={showMap} onComplete={(score) => recordGameProgress('snake', score)} />}
         {screen === 'tower' && <AbyssTowerGame key={`tower-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('tower', score)} />}
-        {screen === 'city' && <UnderseaCityGame key={`city-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('city', score)} />}
-        {screen === 'lightbomb' && <LightBombMazeGame key={`lightbomb-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('lightbomb', score)} />}
+        {screen === 'city' && <UnderseaCityGame key={`city-${screenResetKey}`} debugGrid={gameSettings.debugGrid} onBack={showMap} onComplete={(score) => recordGameProgress('city', score)} />}
+        {screen === 'lightbomb' && <LightBombMazeGame key={`lightbomb-${screenResetKey}`} debugGrid={gameSettings.debugGrid} onBack={showMap} onComplete={(score) => recordGameProgress('lightbomb', score)} />}
         {screen === 'revelation' && <AncientRevelationGame key={`revelation-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('revelation', score)} />}
         {screen === 'video' && <VideoLeadIn leadIn={videoLeadIn} onComplete={completeVideoLeadIn} />}
         {screen === 'combat' && (
@@ -2674,6 +2709,14 @@ function GlobalSettingsPanel({
                 />
               </label>
             </div>
+            <label className="settings-toggle-row">
+              <input
+                type="checkbox"
+                checked={settings.debugGrid}
+                onChange={(event) => onSettingsChange({ debugGrid: event.currentTarget.checked })}
+              />
+              <span>QA 格狀移動顯示</span>
+            </label>
             <div className="settings-actions">
               <button onClick={onRestart} disabled={!canRestart}>
                 <RotateCcw size={17} />
@@ -2701,6 +2744,20 @@ function GlobalSettingsPanel({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function GridDebugOverlay({ title, items }: { title: string; items: GridDebugItem[] }) {
+  return (
+    <div className="grid-debug-overlay" aria-hidden="true">
+      <strong>{title}</strong>
+      {items.map((item) => (
+        <span key={item.label}>
+          <b>{item.label}</b>
+          <i>{String(item.value)}</i>
+        </span>
+      ))}
     </div>
   );
 }
@@ -3939,7 +3996,7 @@ function SnowfieldGame({ onBack, onComplete }: { onBack: () => void; onComplete:
   );
 }
 
-function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete: GameCompleteHandler }) {
+function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; onBack: () => void; onComplete: GameCompleteHandler }) {
   const snakeBoardRef = useRef<HTMLDivElement | null>(null);
   const pausedRef = useGamePausedRef();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -4339,6 +4396,15 @@ function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete:
   const snakeInvincibleRemaining = invincibleUntil - snakeRenderTime;
   const snakeInvincibleActive = snakeInvincibleRemaining > 0;
   const snakeInvincibleEnding = snakeInvincibleActive && snakeInvincibleRemaining < 1600;
+  const snakeDebugItems: GridDebugItem[] = [
+    { label: 'head', value: gridCellLabel(snake[0]?.col ?? 0, snake[0]?.row ?? 0) },
+    { label: 'dir', value: direction },
+    { label: 'step', value: stepDirectionRef.current },
+    { label: 'camera', value: `${snakeCamera.col.toFixed(2)},${snakeCamera.row.toFixed(2)}` },
+    { label: 'status', value: status },
+    { label: 'tick', value: snakeStepMs },
+    { label: 'food', value: gridCellLabel(food.col, food.row) },
+  ];
 
   return (
     <section className="screen tide-screen">
@@ -4431,6 +4497,7 @@ function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete:
               <span>{readyNotice.detail}</span>
             </div>
           )}
+          {debugGrid && <GridDebugOverlay title="SNAKE GRID" items={snakeDebugItems} />}
           <div
             className={`snake-controls ${padDirection ? `active-${padDirection}` : ''}`}
             aria-label="方向控制"
@@ -4872,7 +4939,7 @@ function AbyssTowerGame({ onBack, onComplete }: { onBack: () => void; onComplete
   );
 }
 
-function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComplete: GameCompleteHandler }) {
+function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; onBack: () => void; onComplete: GameCompleteHandler }) {
   const startingTiles = useMemo(() => createCityTiles(), []);
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const pausedRef = useGamePausedRef();
@@ -4894,6 +4961,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
   const heldDirectionRef = useRef<DirectionPadIntent>(null);
   const diagonalAxisRef = useRef<'horizontal' | 'vertical'>('horizontal');
   const nextPlayerStepAt = useRef(0);
+  const cityMoveDebugRef = useRef({ last: 'ready', attempts: 0, committed: 0 });
   const bankedAbilitiesRef = useRef<CityAbilityDurations>(cityEmptyAbilityDurations());
   const movePointerRef = useRef<number | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -5027,6 +5095,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
     diagonalAxisRef.current = 'horizontal';
     movePointerRef.current = null;
     nextPlayerStepAt.current = 0;
+    cityMoveDebugRef.current = { last: 'ready', attempts: 0, committed: 0 };
     spawnTimer.current = 0;
     nextId.current = 1;
     lastTime.current = null;
@@ -5081,24 +5150,31 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
   }, []);
 
   const cityPlayerSettled = useCallback(() => (
-    Math.hypot(visualPlayerRef.current.x - playerRef.current.x, visualPlayerRef.current.y - playerRef.current.y) <= cityCellSize * 0.1
+    gridDistanceSettled(playerRef.current, visualPlayerRef.current, cityCellSize * 0.1)
   ), []);
 
   const movePlayerStep = useCallback((direction: CityDirection) => {
     const currentPlayer = { ...playerRef.current, dir: direction };
+    cityMoveDebugRef.current.attempts += 1;
     if (!cityPlayerSettled()) {
       playerRef.current = currentPlayer;
+      cityMoveDebugRef.current.last = 'busy';
       return false;
     }
     const next = cityStepPosition(currentPlayer, direction);
-    if (statusRef.current === 'playing' && cityCanOccupy(next.x, next.y, tilesRef.current, enemiesRef.current)) {
+    const blockedByWall = cityBlocked(next.x, next.y, cityUnitSize, tilesRef.current);
+    const blockedByUnit = cityOccupied(next.x, next.y, enemiesRef.current);
+    if (statusRef.current === 'playing' && !blockedByWall && !blockedByUnit) {
       currentPlayer.x = next.x;
       currentPlayer.y = next.y;
       playerRef.current = currentPlayer;
+      cityMoveDebugRef.current.committed += 1;
+      cityMoveDebugRef.current.last = 'moved';
       playGameSfx('step');
       return true;
     }
     playerRef.current = currentPlayer;
+    cityMoveDebugRef.current.last = blockedByWall ? 'blocked' : blockedByUnit ? 'unit' : 'stopped';
     return false;
   }, [cityPlayerSettled]);
 
@@ -5146,9 +5222,17 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
     }
     if (!wasHolding) {
       const moved = movePlayerIntent(intent);
-      nextPlayerStepAt.current = startTime + (moved ? (dashUntilRef.current > startTime ? 118 : cityPlayerStepDelayMs) : cityTurnRetryMs);
+      nextPlayerStepAt.current = gridNextStepAt(startTime, moved, {
+        stepMs: dashUntilRef.current > startTime ? 118 : cityPlayerStepDelayMs,
+        retryMs: cityTurnRetryMs,
+        turnBufferMs: cityTurnBufferMs,
+      });
     } else if (!sameIntent) {
-      nextPlayerStepAt.current = Math.min(nextPlayerStepAt.current, startTime + cityTurnBufferMs);
+      nextPlayerStepAt.current = gridTurnBufferAt(nextPlayerStepAt.current, startTime, {
+        stepMs: cityPlayerStepDelayMs,
+        retryMs: cityTurnRetryMs,
+        turnBufferMs: cityTurnBufferMs,
+      });
     }
   }, [facePlayerDirection, movePlayerIntent]);
 
@@ -5268,7 +5352,11 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
         const heldIntent = heldDirectionRef.current;
         if (heldIntent && time >= nextPlayerStepAt.current) {
           const moved = movePlayerIntent(heldIntent);
-          nextPlayerStepAt.current = time + (moved ? (dashActive ? 118 : cityPlayerStepDelayMs) : cityTurnRetryMs);
+          nextPlayerStepAt.current = gridNextStepAt(time, moved, {
+            stepMs: dashActive ? 118 : cityPlayerStepDelayMs,
+            retryMs: cityTurnRetryMs,
+            turnBufferMs: cityTurnBufferMs,
+          });
         }
         const currentTiles = tilesRef.current;
         const currentPlayer = { ...playerRef.current };
@@ -5635,6 +5723,15 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
     ['--pad-x' as string]: `${padVector.x}px`,
     ['--pad-y' as string]: `${padVector.y}px`,
   };
+  const cityDebugItems: GridDebugItem[] = [
+    { label: 'logic', value: gridCellLabel(cityCoordToCell(playerRef.current.x), cityCoordToCell(playerRef.current.y)) },
+    { label: 'visual', value: gridCellLabel(cityCoordToCell(visualPlayer.x), cityCoordToCell(visualPlayer.y)) },
+    { label: 'intent', value: directionPadIntentLabel(heldDirectionRef.current) },
+    { label: 'busy', value: !gridDistanceSettled(playerRef.current, visualPlayerRef.current, cityCellSize * 0.1) },
+    { label: 'next', value: Number.isFinite(nextPlayerStepAt.current) ? Math.max(0, Math.round(nextPlayerStepAt.current - cityRenderTime)) : 'idle' },
+    { label: 'last', value: cityMoveDebugRef.current.last },
+    { label: 'moves', value: `${cityMoveDebugRef.current.committed}/${cityMoveDebugRef.current.attempts}` },
+  ];
 
   return (
     <section className="screen city-screen">
@@ -5698,6 +5795,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
             <span>裝甲 {armor}/{cityMaxHp}</span>
             <span>擊破 {kills}/{currentCityConfig.targetKills}</span>
           </div>
+          {debugGrid && <GridDebugOverlay title="CITY GRID" items={cityDebugItems} />}
           {notice && (
             <div className={`city-notice ${notice.kind}`} key={notice.id}>
               {notice.text}
@@ -5759,7 +5857,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
   );
 }
 
-function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onComplete: GameCompleteHandler }) {
+function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; onBack: () => void; onComplete: GameCompleteHandler }) {
   const firstLevel = useMemo(() => createLightBombLevel(lightBombLevelConfig(1)), []);
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const pausedRef = useGamePausedRef();
@@ -5782,6 +5880,7 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
   const heldDirectionRef = useRef<LightBombPadIntent>(null);
   const movePointerRef = useRef<number | null>(null);
   const nextPlayerMoveAtRef = useRef(Number.POSITIVE_INFINITY);
+  const lightBombMoveDebugRef = useRef({ last: 'ready', attempts: 0, committed: 0 });
   const actionPointerAtRef = useRef(0);
   const remoteTriggerRef = useRef<number | null>(null);
   const completionReported = useRef(false);
@@ -5826,6 +5925,7 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
     heldDirectionRef.current = null;
     movePointerRef.current = null;
     nextPlayerMoveAtRef.current = Number.POSITIVE_INFINITY;
+    lightBombMoveDebugRef.current = { last: 'ready', attempts: 0, committed: 0 };
     remoteTriggerRef.current = null;
     lastTime.current = null;
     nextId.current = 1000;
@@ -5897,6 +5997,14 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
     return !enemies.some((enemy) => enemy.id !== ignoreEnemyId && enemy.row === row && enemy.col === col);
   }, []);
 
+  const lightBombBlockReason = useCallback((row: number, col: number, bombs: LightBombBomb[], enemies: LightBombEnemy[], ignoreEnemyId?: number) => {
+    if (row < 0 || col < 0 || row >= lightBombRows || col >= lightBombCols) return 'edge';
+    if (lightBombBlocks(lightBombTileAt(tilesRef.current, row, col))) return 'wall';
+    if (bombs.some((bomb) => bomb.row === row && bomb.col === col)) return 'bomb';
+    if (enemies.some((enemy) => enemy.id !== ignoreEnemyId && enemy.row === row && enemy.col === col)) return 'enemy';
+    return 'clear';
+  }, []);
+
   const tryKickBomb = useCallback((bomb: LightBombBomb, direction: CityDirection, bombs: LightBombBomb[], enemies: LightBombEnemy[]) => {
     if (!playerRef.current.kick) return bombs;
     const vector = cityDirectionVector(direction);
@@ -5915,8 +6023,10 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
   const tryMovePlayer = useCallback((direction: CityDirection) => {
     if (statusRef.current !== 'playing') return false;
     const player = { ...playerRef.current, dir: direction };
-    if (Math.abs(player.x - player.col) + Math.abs(player.y - player.row) > 0.08) {
+    lightBombMoveDebugRef.current.attempts += 1;
+    if (!gridDistanceSettled({ x: player.col, y: player.row }, { x: player.x, y: player.y }, 0.08)) {
       playerRef.current = player;
+      lightBombMoveDebugRef.current.last = 'busy';
       return false;
     }
     const vector = cityDirectionVector(direction);
@@ -5929,6 +6039,7 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
       setBombs(nextBombs);
       if (nextBombs.some((bomb) => bomb.row === nextRow && bomb.col === nextCol)) {
         playerRef.current = player;
+        lightBombMoveDebugRef.current.last = 'bomb';
         return false;
       }
     }
@@ -5936,11 +6047,14 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
       player.row = nextRow;
       player.col = nextCol;
       playerRef.current = player;
+      lightBombMoveDebugRef.current.committed += 1;
+      lightBombMoveDebugRef.current.last = 'moved';
       return true;
     }
     playerRef.current = player;
+    lightBombMoveDebugRef.current.last = lightBombBlockReason(nextRow, nextCol, bombsRef.current, enemiesRef.current);
     return false;
-  }, [canEnterCell, tryKickBomb]);
+  }, [canEnterCell, lightBombBlockReason, tryKickBomb]);
 
   const placeOrTriggerBomb = useCallback(() => {
     if (statusRef.current !== 'playing') return;
@@ -6013,9 +6127,17 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
     }
     if (!wasHolding) {
       const moved = tryMoveIntent(intent);
-      nextPlayerMoveAtRef.current = performance.now() + (moved ? lightBombHoldStepMs(playerRef.current) : lightBombTurnRetryMs);
+      nextPlayerMoveAtRef.current = gridNextStepAt(performance.now(), moved, {
+        stepMs: lightBombHoldStepMs(playerRef.current),
+        retryMs: lightBombTurnRetryMs,
+        turnBufferMs: lightBombTurnBufferMs,
+      });
     } else if (!sameIntent) {
-      nextPlayerMoveAtRef.current = Math.min(nextPlayerMoveAtRef.current, performance.now() + lightBombTurnBufferMs);
+      nextPlayerMoveAtRef.current = gridTurnBufferAt(nextPlayerMoveAtRef.current, performance.now(), {
+        stepMs: lightBombHoldStepMs(playerRef.current),
+        retryMs: lightBombTurnRetryMs,
+        turnBufferMs: lightBombTurnBufferMs,
+      });
     }
   }, [tryMoveIntent]);
 
@@ -6105,7 +6227,11 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
         const held = heldDirectionRef.current;
         if (held && time >= nextPlayerMoveAtRef.current) {
           const moved = tryMoveIntent(held);
-          nextPlayerMoveAtRef.current = time + (moved ? lightBombHoldStepMs(playerRef.current) : lightBombTurnRetryMs);
+          nextPlayerMoveAtRef.current = gridNextStepAt(time, moved, {
+            stepMs: lightBombHoldStepMs(playerRef.current),
+            retryMs: lightBombTurnRetryMs,
+            turnBufferMs: lightBombTurnBufferMs,
+          });
         }
 
         let currentPlayer = { ...playerRef.current };
@@ -6315,14 +6441,24 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
     height: `${worldPx}px`,
     transform: `translate(${-camera.x * cellPx}px, ${-camera.y * cellPx}px)`,
   };
-  const shielded = player.shieldUntil > performance.now();
-  const remote = player.remoteUntil > performance.now();
+  const lightBombRenderTime = performance.now();
+  const shielded = player.shieldUntil > lightBombRenderTime;
+  const remote = player.remoteUntil > lightBombRenderTime;
   const padStickStyle: CSSProperties = {
     ['--pad-x' as string]: `${padVector.x}px`,
     ['--pad-y' as string]: `${padVector.y}px`,
   };
   const currentLevelConfig = lightBombLevelConfig(stage);
   const currentCharacter = lightBombCharacterDef(player.character);
+  const lightBombDebugItems: GridDebugItem[] = [
+    { label: 'logic', value: gridCellLabel(player.col, player.row) },
+    { label: 'visual', value: `${player.x.toFixed(2)},${player.y.toFixed(2)}` },
+    { label: 'intent', value: directionPadIntentLabel(heldDirectionRef.current) },
+    { label: 'busy', value: !gridDistanceSettled({ x: player.col, y: player.row }, { x: player.x, y: player.y }, 0.08) },
+    { label: 'next', value: Number.isFinite(nextPlayerMoveAtRef.current) ? Math.max(0, Math.round(nextPlayerMoveAtRef.current - lightBombRenderTime)) : 'idle' },
+    { label: 'last', value: lightBombMoveDebugRef.current.last },
+    { label: 'moves', value: `${lightBombMoveDebugRef.current.committed}/${lightBombMoveDebugRef.current.attempts}` },
+  ];
 
   if (status === 'select') {
     return (
@@ -6398,6 +6534,7 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
             <span>光爆 {bombs.length}/{player.maxBombs}</span>
             <span>火力 {player.range}</span>
           </div>
+          {debugGrid && <GridDebugOverlay title="BOMB GRID" items={lightBombDebugItems} />}
           {notice && <div className={`lightbomb-notice ${notice.kind}`} key={notice.id}>{notice.text}</div>}
           <div
             className={`lightbomb-controls ${padDirection ? `active-${padDirection}` : ''}`}
