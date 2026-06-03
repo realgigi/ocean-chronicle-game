@@ -8,6 +8,7 @@ function assetUrl(path: string) {
 
 type Screen = 'title' | 'map' | 'gallery' | 'video' | 'combat' | 'victory' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city' | 'lightbomb' | 'revelation';
 type PlayableScene = Exclude<Screen, 'title' | 'map' | 'gallery' | 'video' | 'victory'>;
+type VideoBackTarget = 'title' | 'map';
 type GameProgressEntry = {
   cleared: boolean;
   best: number;
@@ -2381,6 +2382,7 @@ export default function App() {
   const [screenResetKey, setScreenResetKey] = useState(0);
   const [completionNotice, setCompletionNotice] = useState<CompletionNotice | null>(null);
   const [videoLeadIn, setVideoLeadIn] = useState<VideoLeadInConfig>(videoLeadIns.startGame);
+  const [videoBackTarget, setVideoBackTarget] = useState<VideoBackTarget>('title');
   const progressRef = useRef(progress);
   const completionNoticeId = useRef(1);
 
@@ -2479,16 +2481,23 @@ export default function App() {
     setSettingsOpen(false);
   }, [screen]);
 
-  const openVideoLeadIn = (leadIn: VideoLeadInConfig) => {
+  const returnFromVideoLeadIn = useCallback(() => {
+    stopOceanBgm();
+    playGameSfx('select');
+    setScreen(videoBackTarget);
+  }, [videoBackTarget]);
+
+  const openVideoLeadIn = (leadIn: VideoLeadInConfig, backTarget: VideoBackTarget = 'map') => {
     stopOceanBgm();
     setVideoLeadIn(leadIn);
+    setVideoBackTarget(backTarget);
     setScreen('video');
   };
   const openLeadInOrCombat = () => {
     openVideoLeadIn(videoLeadIns.northBorder);
   };
   const startGame = () => {
-    openVideoLeadIn(videoLeadIns.startGame);
+    openVideoLeadIn(videoLeadIns.startGame, 'title');
   };
   const startCombat = () => {
     void startOceanBgm();
@@ -2578,7 +2587,14 @@ export default function App() {
         {screen === 'city' && <UnderseaCityGame key={`city-${screenResetKey}`} debugGrid={gameSettings.debugGrid} onBack={showMap} onComplete={(score) => recordGameProgress('city', score)} />}
         {screen === 'lightbomb' && <LightBombMazeGame key={`lightbomb-${screenResetKey}`} debugGrid={gameSettings.debugGrid} onBack={showMap} onComplete={(score) => recordGameProgress('lightbomb', score)} />}
         {screen === 'revelation' && <AncientRevelationGame key={`revelation-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('revelation', score)} />}
-        {screen === 'video' && <VideoLeadIn leadIn={videoLeadIn} onComplete={completeVideoLeadIn} />}
+        {screen === 'video' && (
+          <VideoLeadIn
+            leadIn={videoLeadIn}
+            backLabel={videoBackTarget === 'title' ? '返回首頁' : '返回地圖'}
+            onBack={returnFromVideoLeadIn}
+            onComplete={completeVideoLeadIn}
+          />
+        )}
         {screen === 'combat' && (
           <CombatStage
             key={`combat-${screenResetKey}`}
@@ -2594,7 +2610,7 @@ export default function App() {
         <GlobalSettingsPanel
           open={settingsOpen}
           settings={gameSettings}
-          canReturnMap={screen !== 'title' && screen !== 'map' && screen !== 'video'}
+          canReturnMap={screen !== 'title' && screen !== 'map' && (screen !== 'video' || videoBackTarget === 'map')}
           canRestart={isPlayableScreen(screen)}
           onToggleOpen={() => setSettingsOpen((open) => !open)}
           onClose={() => setSettingsOpen(false)}
@@ -7254,7 +7270,17 @@ function CharacterGallery({ onBack }: { onBack: () => void }) {
   );
 }
 
-function VideoLeadIn({ leadIn, onComplete }: { leadIn: VideoLeadInConfig; onComplete: () => void }) {
+function VideoLeadIn({
+  leadIn,
+  backLabel,
+  onBack,
+  onComplete,
+}: {
+  leadIn: VideoLeadInConfig;
+  backLabel: string;
+  onBack: () => void;
+  onComplete: () => void;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -7266,6 +7292,9 @@ function VideoLeadIn({ leadIn, onComplete }: { leadIn: VideoLeadInConfig; onComp
 
   return (
     <section className="screen video-screen">
+      <button className="icon-button video-back-button" onClick={onBack} aria-label={backLabel}>
+        <ChevronLeft size={21} />
+      </button>
       <div className="video-copy">
         <span>{leadIn.eyebrow}</span>
         <h2>{leadIn.title}</h2>
@@ -7280,6 +7309,10 @@ function VideoLeadIn({ leadIn, onComplete }: { leadIn: VideoLeadInConfig; onComp
         onEnded={onComplete}
       />
       <div className="video-actions">
+        <button className="video-back-action" onClick={onBack}>
+          <ChevronLeft size={18} />
+          {backLabel}
+        </button>
         <button onClick={() => videoRef.current?.play()}>
           <Play size={18} />
           看影片

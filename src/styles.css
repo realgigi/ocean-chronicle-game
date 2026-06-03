@@ -808,11 +808,22 @@ button:disabled {
 }
 
 .video-screen {
+  position: relative;
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 12px;
-  padding: 22px;
+  padding: max(54px, calc(18px + env(safe-area-inset-top))) 18px max(18px, env(safe-area-inset-bottom));
   background: #030c14;
+}
+
+.video-back-button {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  z-index: 2;
+  background: rgba(6, 23, 35, 0.78);
+  border-color: rgba(141, 231, 255, 0.26);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
 .video-copy h2 {
@@ -833,6 +844,10 @@ button:disabled {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.video-back-action {
+  grid-column: 1 / -1;
 }
 
 .memory-screen {
