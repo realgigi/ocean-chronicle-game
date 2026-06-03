@@ -5,14 +5,18 @@ let padOscillators: OscillatorNode[] = [];
 let bgmProfile: BgmProfile | null = null;
 let bgmIntensity = 1;
 
-type GameSfx = 'select' | 'bomb' | 'blast' | 'powerup' | 'door' | 'hit' | 'kick';
-type BgmProfile = 'ocean' | 'lightbomb';
+type GameSfx = 'select' | 'bomb' | 'blast' | 'powerup' | 'door' | 'hit' | 'kick' | 'step' | 'shoot' | 'score' | 'warning' | 'level';
+type BgmProfile = 'ocean' | 'lightbomb' | 'city' | 'snake';
 
 const leadNotes = [392, 466.16, 523.25, 587.33, 523.25, 698.46, 622.25, 466.16];
 const arpeggioNotes = [293.66, 349.23, 392, 466.16, 523.25, 587.33, 523.25, 392];
 const bassNotes = [73.42, 92.5, 110, 98, 73.42, 116.54, 130.81, 110];
 const mazeLeadNotes = [523.25, 587.33, 698.46, 783.99, 698.46, 622.25, 587.33, 466.16];
 const mazeBassNotes = [65.41, 82.41, 98, 110, 82.41, 123.47, 98, 73.42];
+const cityLeadNotes = [196, 246.94, 293.66, 349.23, 392, 349.23, 293.66, 246.94];
+const cityBassNotes = [55, 65.41, 82.41, 73.42, 55, 92.5, 98, 73.42];
+const snakeLeadNotes = [329.63, 392, 493.88, 587.33, 523.25, 440, 392, 493.88];
+const snakeBassNotes = [82.41, 98, 123.47, 110, 82.41, 130.81, 146.83, 98];
 
 function makeContext() {
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
@@ -199,6 +203,69 @@ function startLightBombBgm(context: AudioContext) {
   }, 2480);
 }
 
+function startCityBgm(context: AudioContext) {
+  let beat = 0;
+  addTimer(() => {
+    const now = context.currentTime;
+    const intensity = bgmIntensity;
+    const bass = cityBassNotes[beat % cityBassNotes.length];
+    playTone(bass, now, 0.13, 'sawtooth', 0.082 + intensity * 0.02, -8);
+    if (beat % 2 === 0) playNoise(now, 0.04, 0.03 + intensity * 0.005, 180, 'lowpass');
+    if (beat % 4 === 2) playTone(bass * 2, now + 0.035, 0.08, 'square', 0.03 + intensity * 0.005);
+    if (beat % 8 === 7) playNoise(now, 0.09, 0.022, 980, 'bandpass');
+    beat += 1;
+  }, 170);
+
+  let pulse = 0;
+  addTimer(() => {
+    const now = context.currentTime;
+    const note = cityLeadNotes[pulse % cityLeadNotes.length];
+    playTone(note, now, 0.08, 'square', 0.018 + bgmIntensity * 0.004, pulse % 2 ? 9 : -9);
+    if (pulse % 3 === 0) playTone(note * 1.5, now + 0.04, 0.08, 'triangle', 0.012 + bgmIntensity * 0.004);
+    pulse += 1;
+  }, 255);
+
+  let alarm = 0;
+  addTimer(() => {
+    const now = context.currentTime;
+    const note = cityLeadNotes[(alarm * 2) % cityLeadNotes.length];
+    playTone(note, now, 0.22, 'triangle', 0.04 + bgmIntensity * 0.006);
+    playTone(note * 0.5, now + 0.03, 0.32, 'sine', 0.026 + bgmIntensity * 0.004);
+    alarm += 1;
+  }, 1360);
+}
+
+function startSnakeBgm(context: AudioContext) {
+  let ripple = 0;
+  addTimer(() => {
+    const now = context.currentTime;
+    const intensity = bgmIntensity;
+    const bass = snakeBassNotes[ripple % snakeBassNotes.length];
+    if (ripple % 2 === 0) playTone(bass, now, 0.18, 'sine', 0.06 + intensity * 0.014);
+    playNoise(now, 0.035, 0.012 + intensity * 0.004, 2800, 'bandpass');
+    if (ripple % 4 === 3) playTone(bass * 1.5, now + 0.05, 0.12, 'triangle', 0.022 + intensity * 0.004);
+    ripple += 1;
+  }, 230);
+
+  let shimmer = 0;
+  addTimer(() => {
+    const now = context.currentTime;
+    const note = snakeLeadNotes[shimmer % snakeLeadNotes.length];
+    playTone(note, now, 0.1, 'triangle', 0.032 + bgmIntensity * 0.004, shimmer % 2 ? 5 : -5);
+    playTone(note * 2, now + 0.055, 0.08, 'sine', 0.014 + bgmIntensity * 0.003);
+    shimmer += 1;
+  }, 460);
+
+  let phrase = 0;
+  addTimer(() => {
+    const now = context.currentTime;
+    const note = snakeLeadNotes[(phrase * 3) % snakeLeadNotes.length];
+    playTone(note, now, 0.34, 'triangle', 0.043 + bgmIntensity * 0.005);
+    playNoise(now + 0.04, 0.28, 0.014 + bgmIntensity * 0.003, 3600, 'bandpass');
+    phrase += 1;
+  }, 1840);
+}
+
 export function setOceanBgmIntensity(intensity: number) {
   bgmIntensity = Math.max(0.8, Math.min(1.8, intensity));
 }
@@ -213,6 +280,8 @@ export async function startOceanBgm(profile: BgmProfile = 'ocean', intensity = 1
   if (bgmTimers.length) return;
   bgmProfile = profile;
   if (profile === 'lightbomb') startLightBombBgm(context);
+  else if (profile === 'city') startCityBgm(context);
+  else if (profile === 'snake') startSnakeBgm(context);
   else startDefaultBgm(context);
 }
 
@@ -240,6 +309,23 @@ export function playGameSfx(kind: GameSfx) {
   } else if (kind === 'kick') {
     playTone(196, now, 0.06, 'square', 0.065);
     playNoise(now, 0.06, 0.03, 1500, 'bandpass');
+  } else if (kind === 'step') {
+    playTone(116.54, now, 0.035, 'triangle', 0.028);
+    playNoise(now, 0.035, 0.015, 260, 'lowpass');
+  } else if (kind === 'shoot') {
+    playTone(392, now, 0.045, 'square', 0.052);
+    playTone(196, now + 0.018, 0.055, 'triangle', 0.032);
+    playNoise(now, 0.04, 0.018, 1800, 'bandpass');
+  } else if (kind === 'score') {
+    playTone(659.25, now, 0.07, 'triangle', 0.055);
+    playTone(987.77, now + 0.045, 0.09, 'sine', 0.038);
+  } else if (kind === 'warning') {
+    playTone(174.61, now, 0.12, 'sawtooth', 0.06, -15);
+    playTone(174.61, now + 0.14, 0.12, 'sawtooth', 0.05, -15);
+  } else if (kind === 'level') {
+    playTone(293.66, now, 0.11, 'triangle', 0.06);
+    playTone(440, now + 0.08, 0.12, 'triangle', 0.06);
+    playTone(659.25, now + 0.17, 0.2, 'triangle', 0.052);
   } else {
     playTone(698.46, now, 0.07, 'triangle', 0.045);
   }

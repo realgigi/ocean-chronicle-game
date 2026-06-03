@@ -979,14 +979,14 @@ const towerPlayerRadius = 3.6;
 const towerPlayerStart: TowerPlayer = { x: 50, y: 48, vy: 0 };
 const cityGridSize = 32;
 const cityCellSize = 100 / cityGridSize;
-const cityViewCols = 10;
-const cityViewRows = 15;
+const cityViewCols = 9;
+const cityViewRows = 14;
 const cityViewWidth = cityCellSize * cityViewCols;
 const cityViewHeight = cityCellSize * cityViewRows;
 const cityUnitSize = cityCellSize * 0.74;
-const cityUnitVisualSize = cityCellSize * 1.02;
-const cityPlayerStepDelayMs = 170;
-const cityPlayerMoveMs = 170;
+const cityUnitVisualSize = cityCellSize * 1.14;
+const cityPlayerStepDelayMs = 162;
+const cityPlayerMoveMs = 148;
 const cityStartingBaseHp = 4;
 const cityStartingArmor = 4;
 const cityMaxHp = 5;
@@ -1744,8 +1744,27 @@ function cityCameraForPosition(x: number, y: number) {
   };
 }
 
+function cityCameraWithDeadZone(previous: { x: number; y: number }, x: number, y: number) {
+  let nextX = previous.x;
+  let nextY = previous.y;
+  const minX = previous.x + cityViewWidth * 0.34;
+  const maxX = previous.x + cityViewWidth * 0.66;
+  const minY = previous.y + cityViewHeight * 0.34;
+  const maxY = previous.y + cityViewHeight * 0.66;
+
+  if (x < minX) nextX = x - cityViewWidth * 0.34;
+  if (x > maxX) nextX = x - cityViewWidth * 0.66;
+  if (y < minY) nextY = y - cityViewHeight * 0.34;
+  if (y > maxY) nextY = y - cityViewHeight * 0.66;
+
+  return {
+    x: clamp(nextX, 0, 100 - cityViewWidth),
+    y: clamp(nextY, 0, 100 - cityViewHeight),
+  };
+}
+
 function citySmoothCamera(previous: { x: number; y: number }, target: { x: number; y: number }, dt: number) {
-  const maxDelta = (cityCellSize * dt) / 115;
+  const maxDelta = (cityCellSize * dt) / 86;
   return {
     x: cityApproach(previous.x, target.x, maxDelta),
     y: cityApproach(previous.y, target.y, maxDelta),
@@ -1922,15 +1941,15 @@ function snakeCameraWithDeadZone(previous: { col: number; row: number }, head: S
   const headRow = head.row + 0.5;
   let col = previous.col;
   let row = previous.row;
-  const minVisibleCol = col + snakeViewCols * 0.35;
-  const maxVisibleCol = col + snakeViewCols * 0.65;
-  const minVisibleRow = row + snakeViewRows * 0.36;
-  const maxVisibleRow = row + snakeViewRows * 0.64;
+  const minVisibleCol = col + snakeViewCols * 0.3;
+  const maxVisibleCol = col + snakeViewCols * 0.7;
+  const minVisibleRow = row + snakeViewRows * 0.32;
+  const maxVisibleRow = row + snakeViewRows * 0.68;
 
-  if (headCol < minVisibleCol) col = headCol - snakeViewCols * 0.35;
-  if (headCol > maxVisibleCol) col = headCol - snakeViewCols * 0.65;
-  if (headRow < minVisibleRow) row = headRow - snakeViewRows * 0.36;
-  if (headRow > maxVisibleRow) row = headRow - snakeViewRows * 0.64;
+  if (headCol < minVisibleCol) col = headCol - snakeViewCols * 0.3;
+  if (headCol > maxVisibleCol) col = headCol - snakeViewCols * 0.7;
+  if (headRow < minVisibleRow) row = headRow - snakeViewRows * 0.32;
+  if (headRow > maxVisibleRow) row = headRow - snakeViewRows * 0.68;
 
   return {
     col: clamp(col, 0, snakeCols - snakeViewCols),
@@ -1939,10 +1958,10 @@ function snakeCameraWithDeadZone(previous: { col: number; row: number }, head: S
 }
 
 function snakeSmoothCamera(previous: { col: number; row: number }, head: SnakeCell) {
-  const target = snakeCenteredCamera(head);
+  const target = snakeCameraWithDeadZone(previous, head);
   return {
-    col: clamp(previous.col + (target.col - previous.col) * 0.62, 0, snakeCols - snakeViewCols),
-    row: clamp(previous.row + (target.row - previous.row) * 0.62, 0, snakeRows - snakeViewRows),
+    col: clamp(previous.col + (target.col - previous.col) * 0.48, 0, snakeCols - snakeViewCols),
+    row: clamp(previous.row + (target.row - previous.row) * 0.48, 0, snakeRows - snakeViewRows),
   };
 }
 
@@ -2345,7 +2364,7 @@ export default function App() {
       return;
     }
     if (videoLeadIn.destination === 'snake') {
-      void startOceanBgm();
+      void startOceanBgm('snake', 1);
       setScreen('snake');
       return;
     }
@@ -2355,7 +2374,7 @@ export default function App() {
       return;
     }
     if (videoLeadIn.destination === 'city') {
-      void startOceanBgm();
+      void startOceanBgm('city', 1.08);
       setScreen('city');
       return;
     }
@@ -3829,6 +3848,7 @@ function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete:
     livesRef.current = 3;
     statusRef.current = 'ready';
     completionReported.current = false;
+    setOceanBgmIntensity(1);
     setScore(0);
     setStatus('ready');
     resetRound(3, { title: '重新開始', detail: '拖曳方向鍵再出發' });
@@ -3930,7 +3950,8 @@ function TideSnakeGame({ onBack, onComplete }: { onBack: () => void; onComplete:
         const nextScore = scoreRef.current + (ateFood ? 1 : 0) + materialBonus;
         scoreRef.current = nextScore;
         setScore(nextScore);
-        if (ateFood || materialBonus > 0) playGameSfx(materialBonus > 0 ? 'blast' : 'powerup');
+        setOceanBgmIntensity(1 + Math.min(0.45, nextScore / snakeTarget * 0.45));
+        if (ateFood || materialBonus > 0) playGameSfx(materialBonus > 0 ? 'blast' : 'score');
         if (nextScore >= snakeTarget) {
           statusRef.current = 'won';
           setStatus('won');
@@ -4753,6 +4774,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
     } else if (options.abilityDurations) {
       applyCityAbilityDurations(options.abilityDurations, now);
     }
+    setOceanBgmIntensity(1.08 + (nextLevel - 1) * 0.22);
     showCityNotice('spawn', options.notice ?? cityLevelConfig(nextLevel).title);
   }, [applyCityAbilityDurations, resetCityAbilities, showCityNotice]);
 
@@ -4787,6 +4809,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
       currentPlayer.x = next.x;
       currentPlayer.y = next.y;
       playerRef.current = currentPlayer;
+      playGameSfx('step');
       return true;
     }
     playerRef.current = currentPlayer;
@@ -4970,7 +4993,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
             ...shotsRef.current,
             ...allyShots,
           ].slice(-30);
-          playGameSfx('bomb');
+          playGameSfx('shoot');
           currentPlayer.cooldown = rapid ? 390 : 650;
           if (spread) {
             currentPlayer.cooldown += 90;
@@ -5125,7 +5148,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
             }
             if (cityIntersectsRect(moved.x, moved.y, cityCellSize * 0.45, { x: cityBase.x - cityBase.size / 2, y: cityBase.y - cityBase.size / 2, size: cityBase.size })) {
               nextBaseHp -= 1;
-              playGameSfx('hit');
+              playGameSfx('warning');
               showCityNotice('base', '主堡 -1');
               return;
             }
@@ -5214,7 +5237,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
           setTiles(nextTiles);
         }
         const nextVisualPlayer = citySmoothVisual(visualPlayerRef.current, { x: currentPlayer.x, y: currentPlayer.y, dir: currentPlayer.dir }, dt);
-        const nextCamera = citySmoothCamera(cameraRef.current, cityCameraForPosition(nextVisualPlayer.x, nextVisualPlayer.y), dt);
+        const nextCamera = citySmoothCamera(cameraRef.current, cityCameraWithDeadZone(cameraRef.current, nextVisualPlayer.x, nextVisualPlayer.y), dt);
         const visualEnemyLookup = new Map(visualEnemiesRef.current.map((enemy) => [enemy.id, enemy]));
         const nextVisualEnemies = nextEnemies.map((enemy) => citySmoothVisual(visualEnemyLookup.get(enemy.id), enemy, dt));
         visualPlayerRef.current = nextVisualPlayer;
@@ -5247,6 +5270,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
               abilityDurations: remainingAbilities,
               notice: `${cityLevelConfig(nextLevel).title}展開`,
             });
+            playGameSfx('level');
           } else {
             statusRef.current = 'won';
             setStatus('won');
