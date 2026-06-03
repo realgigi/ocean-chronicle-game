@@ -1068,6 +1068,8 @@ const cityUnitSize = cityCellSize * 0.74;
 const cityUnitVisualSize = cityCellSize * 1.14;
 const cityPlayerStepDelayMs = 162;
 const cityPlayerMoveMs = 148;
+const cityTurnRetryMs = 42;
+const cityTurnBufferMs = 54;
 const cityStartingBaseHp = 4;
 const cityStartingArmor = 4;
 const cityMaxHp = 5;
@@ -1137,6 +1139,7 @@ const lightBombViewRows = 17;
 const lightBombViewCols = 10;
 const lightBombKickStepMs = 82;
 const lightBombTurnRetryMs = 62;
+const lightBombTurnBufferMs = 52;
 const lightBombLevels: LightBombLevelConfig[] = [
   { stage: 1, title: '第一迷宮', enemyCount: 18, enemyDelayScale: 1.08, powerupCount: 13, musicIntensity: 0.96 },
   { stage: 2, title: '第二迷宮', enemyCount: 24, enemyDelayScale: 0.9, powerupCount: 15, musicIntensity: 1.2 },
@@ -5077,8 +5080,16 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
     return () => observer.disconnect();
   }, []);
 
+  const cityPlayerSettled = useCallback(() => (
+    Math.hypot(visualPlayerRef.current.x - playerRef.current.x, visualPlayerRef.current.y - playerRef.current.y) <= cityCellSize * 0.1
+  ), []);
+
   const movePlayerStep = useCallback((direction: CityDirection) => {
     const currentPlayer = { ...playerRef.current, dir: direction };
+    if (!cityPlayerSettled()) {
+      playerRef.current = currentPlayer;
+      return false;
+    }
     const next = cityStepPosition(currentPlayer, direction);
     if (statusRef.current === 'playing' && cityCanOccupy(next.x, next.y, tilesRef.current, enemiesRef.current)) {
       currentPlayer.x = next.x;
@@ -5089,7 +5100,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
     }
     playerRef.current = currentPlayer;
     return false;
-  }, []);
+  }, [cityPlayerSettled]);
 
   const facePlayerDirection = useCallback((direction: CityDirection) => {
     if (playerRef.current.dir === direction) return;
@@ -5099,7 +5110,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
   }, []);
 
   const movePlayerIntent = useCallback((intent: DirectionPadIntent) => {
-    if (!intent) return;
+    if (!intent) return false;
     if (intent.secondary) {
       const directions = [intent.primary, intent.secondary];
       const horizontal = directions.find((direction) => direction === 'left' || direction === 'right');
@@ -5111,9 +5122,9 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
       if (moved) {
         diagonalAxisRef.current = diagonalAxisRef.current === 'horizontal' ? 'vertical' : 'horizontal';
       }
-      return;
+      return moved;
     }
-    if (movePlayerStep(intent.primary)) return;
+    return movePlayerStep(intent.primary);
   }, [movePlayerStep]);
 
   const holdPlayerDirection = useCallback((intent: DirectionPadIntent, vector: DirectionPadVector = { x: 0, y: 0 }, startTime = performance.now()) => {
@@ -5124,6 +5135,7 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
     setPadVector(intent ? vector : { x: 0, y: 0 });
     if (!intent) {
       diagonalAxisRef.current = 'horizontal';
+      nextPlayerStepAt.current = Number.POSITIVE_INFINITY;
       return;
     }
     if (!sameIntent) {
@@ -5133,11 +5145,10 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
       diagonalAxisRef.current = 'horizontal';
     }
     if (!wasHolding) {
-      movePlayerIntent(intent);
-      nextPlayerStepAt.current = startTime + (dashUntilRef.current > startTime ? 118 : cityPlayerStepDelayMs);
+      const moved = movePlayerIntent(intent);
+      nextPlayerStepAt.current = startTime + (moved ? (dashUntilRef.current > startTime ? 118 : cityPlayerStepDelayMs) : cityTurnRetryMs);
     } else if (!sameIntent) {
-      movePlayerIntent(intent);
-      nextPlayerStepAt.current = startTime + (dashUntilRef.current > startTime ? 112 : Math.max(120, cityPlayerStepDelayMs - 32));
+      nextPlayerStepAt.current = Math.min(nextPlayerStepAt.current, startTime + cityTurnBufferMs);
     }
   }, [facePlayerDirection, movePlayerIntent]);
 
@@ -5256,8 +5267,8 @@ function UnderseaCityGame({ onBack, onComplete }: { onBack: () => void; onComple
         const dashActive = dashUntilRef.current > time;
         const heldIntent = heldDirectionRef.current;
         if (heldIntent && time >= nextPlayerStepAt.current) {
-          movePlayerIntent(heldIntent);
-          nextPlayerStepAt.current = time + (dashActive ? 118 : cityPlayerStepDelayMs);
+          const moved = movePlayerIntent(heldIntent);
+          nextPlayerStepAt.current = time + (moved ? (dashActive ? 118 : cityPlayerStepDelayMs) : cityTurnRetryMs);
         }
         const currentTiles = tilesRef.current;
         const currentPlayer = { ...playerRef.current };
@@ -5991,6 +6002,7 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
   }, [tryMovePlayer]);
 
   const holdDirection = useCallback((intent: LightBombPadIntent, vector: LightBombPadVector = { x: 0, y: 0 }) => {
+    const wasHolding = heldDirectionRef.current !== null;
     const sameIntent = directionPadIntentsEqual(heldDirectionRef.current, intent);
     heldDirectionRef.current = intent;
     setPadDirection(intent?.primary ?? null);
@@ -5999,9 +6011,11 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
       nextPlayerMoveAtRef.current = Number.POSITIVE_INFINITY;
       return;
     }
-    if (!sameIntent) {
+    if (!wasHolding) {
       const moved = tryMoveIntent(intent);
       nextPlayerMoveAtRef.current = performance.now() + (moved ? lightBombHoldStepMs(playerRef.current) : lightBombTurnRetryMs);
+    } else if (!sameIntent) {
+      nextPlayerMoveAtRef.current = Math.min(nextPlayerMoveAtRef.current, performance.now() + lightBombTurnBufferMs);
     }
   }, [tryMoveIntent]);
 
