@@ -1055,6 +1055,7 @@ const lightBombCols = 31;
 const lightBombViewRows = 17;
 const lightBombViewCols = 10;
 const lightBombKickStepMs = 82;
+const lightBombTurnRetryMs = 62;
 const lightBombLevels: LightBombLevelConfig[] = [
   { stage: 1, title: '第一迷宮', enemyCount: 20, enemyDelayScale: 1, powerupCount: 12, musicIntensity: 1 },
   { stage: 2, title: '第二迷宮', enemyCount: 26, enemyDelayScale: 0.82, powerupCount: 14, musicIntensity: 1.28 },
@@ -1876,6 +1877,10 @@ function createLightBombLevel(config = lightBombLevelConfig(1)): LightBombLevel 
 
 function lightBombVisualStep(value: number, target: number, dt: number, moveMs: number) {
   return cityApproach(value, target, dt / moveMs);
+}
+
+function lightBombHoldStepMs(player: LightBombPlayer) {
+  return Math.max(128, player.moveMs * 0.92);
 }
 
 function lightBombCellsEqual(a: { row: number; col: number }, b: { row: number; col: number }) {
@@ -5440,6 +5445,7 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
   const statusRef = useRef<LightBombStatus>('select');
   const heldDirectionRef = useRef<LightBombPadIntent>(null);
   const movePointerRef = useRef<number | null>(null);
+  const nextPlayerMoveAtRef = useRef(Number.POSITIVE_INFINITY);
   const actionPointerAtRef = useRef(0);
   const remoteTriggerRef = useRef<number | null>(null);
   const completionReported = useRef(false);
@@ -5483,6 +5489,7 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
     statusRef.current = 'playing';
     heldDirectionRef.current = null;
     movePointerRef.current = null;
+    nextPlayerMoveAtRef.current = Number.POSITIVE_INFINITY;
     remoteTriggerRef.current = null;
     lastTime.current = null;
     nextId.current = 1000;
@@ -5525,6 +5532,7 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
     statusRef.current = 'select';
     heldDirectionRef.current = null;
     movePointerRef.current = null;
+    nextPlayerMoveAtRef.current = Number.POSITIVE_INFINITY;
     setStatus('select');
     setSelectedCharacter(null);
     setPadDirection(null);
@@ -5651,16 +5659,25 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
   }, []);
 
   const tryMoveIntent = useCallback((intent: LightBombPadIntent) => {
-    if (!intent) return;
-    if (tryMovePlayer(intent.primary)) return;
-    if (intent.secondary) tryMovePlayer(intent.secondary);
+    if (!intent) return false;
+    if (tryMovePlayer(intent.primary)) return true;
+    if (intent.secondary) return tryMovePlayer(intent.secondary);
+    return false;
   }, [tryMovePlayer]);
 
   const holdDirection = useCallback((intent: LightBombPadIntent, vector: LightBombPadVector = { x: 0, y: 0 }) => {
+    const sameIntent = directionPadIntentsEqual(heldDirectionRef.current, intent);
     heldDirectionRef.current = intent;
     setPadDirection(intent?.primary ?? null);
     setPadVector(intent ? vector : { x: 0, y: 0 });
-    tryMoveIntent(intent);
+    if (!intent) {
+      nextPlayerMoveAtRef.current = Number.POSITIVE_INFINITY;
+      return;
+    }
+    if (!sameIntent) {
+      const moved = tryMoveIntent(intent);
+      nextPlayerMoveAtRef.current = performance.now() + (moved ? lightBombHoldStepMs(playerRef.current) : lightBombTurnRetryMs);
+    }
   }, [tryMoveIntent]);
 
   const updatePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -5725,7 +5742,10 @@ function LightBombMazeGame({ onBack, onComplete }: { onBack: () => void; onCompl
       if (statusRef.current === 'playing') {
         const levelConfig = lightBombLevelConfig(stageRef.current);
         const held = heldDirectionRef.current;
-        if (held) tryMoveIntent(held);
+        if (held && time >= nextPlayerMoveAtRef.current) {
+          const moved = tryMoveIntent(held);
+          nextPlayerMoveAtRef.current = time + (moved ? lightBombHoldStepMs(playerRef.current) : lightBombTurnRetryMs);
+        }
 
         let currentPlayer = { ...playerRef.current };
         currentPlayer.x = lightBombVisualStep(currentPlayer.x, currentPlayer.col, dt, currentPlayer.moveMs);
@@ -6226,6 +6246,24 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     showNotice(nextLives > 0 ? '封線碎裂' : '封印失敗', 'hit');
   }, [showNotice, syncGame]);
 
+  const retractOwnTrail = useCallback(() => {
+    const currentPlayer = playerRef.current;
+    syncGame({
+      player: {
+        ...currentPlayer,
+        x: currentPlayer.safeX,
+        y: currentPlayer.safeY,
+        drawing: false,
+      },
+      trail: [],
+    });
+    moveIntentRef.current = null;
+    setPadDirection(null);
+    setPadVector({ x: 0, y: 0 });
+    playGameSfx('select');
+    showNotice('封線收回', 'seal');
+  }, [showNotice, syncGame]);
+
   const applyCapturedPowerups = useCallback((capturedKeys: Set<string>, defeatedEnemyIds: Set<number>, baseGrid: boolean[][], baseEnemies: RevelationEnemy[], time: number) => {
     let nextGrid = baseGrid;
     let nextPlayer = playerRef.current;
@@ -6433,7 +6471,7 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
 
           currentPlayer = { ...currentPlayer, x: nextX, y: nextY };
           if (hitTrail) {
-            resetAfterHit(time);
+            retractOwnTrail();
             rafRef.current = requestAnimationFrame(tick);
             return;
           }
@@ -6472,7 +6510,7 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [applyCapturedPowerups, arenaSize.height, arenaSize.width, onComplete, resetAfterHit, showNotice, syncGame]);
+  }, [applyCapturedPowerups, arenaSize.height, arenaSize.width, onComplete, resetAfterHit, retractOwnTrail, showNotice, syncGame]);
 
   const updatePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
