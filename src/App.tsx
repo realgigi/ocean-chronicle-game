@@ -2256,14 +2256,19 @@ function isNegativeBreakoutPowerup(kind: BreakoutPowerupKind) {
 
 const breakoutPowerups: BreakoutPowerupKind[] = ['split2', 'gun', 'split5', 'giant', 'wide', 'grow', 'narrow'];
 const breakoutMaxActivePowerups = 4;
-const breakoutMaxActiveShots = 5;
+const breakoutMaxActiveShots = 7;
 const breakoutMaxBalls = 8;
 const breakoutDefaultPaddleWidth = 24;
-const breakoutShotIntervalMs = 330;
-const breakoutPowerupCooldownMs = 560;
-const breakoutBallPowerupChance = 0.08;
-const breakoutShotPowerupChance = 0.025;
+const breakoutInitialBallVx = 0.014;
+const breakoutInitialBallVy = -0.031;
+const breakoutShotIntervalMs = 220;
+const breakoutPowerupCooldownMs = 480;
+const breakoutBallPowerupChance = 0.12;
+const breakoutShotPowerupChance = 0.04;
 const breakoutMaxGrowLayers = 3;
+const breakoutUltimateChargeMax = 100;
+const breakoutUltimateShots = 20;
+const breakoutUltimateBallCount = 5;
 const mineRows = 10;
 const mineCols = 8;
 const mineCount = 13;
@@ -3041,10 +3046,11 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
   const lastPowerupSpawnTime = useRef(-Infinity);
   const paddleRef = useRef(50);
   const paddleWidthRef = useRef(breakoutDefaultPaddleWidth);
-  const ballsRef = useRef<IceBall[]>([{ id: 0, x: 50, y: 80, vx: 0.012, vy: -0.024, bigHits: 0 }]);
+  const ballsRef = useRef<IceBall[]>([{ id: 0, x: 50, y: 80, vx: breakoutInitialBallVx, vy: breakoutInitialBallVy, bigHits: 0 }]);
   const powerupsRef = useRef<BreakoutPowerup[]>([]);
   const shotsRef = useRef<IceShot[]>([]);
   const ammoRef = useRef(0);
+  const ultimateChargeRef = useRef(0);
   const shieldRef = useRef(3);
   const bricksRef = useRef<IceBrick[]>(createIceBricks());
   const statusRef = useRef<BreakoutStatus>('ready');
@@ -3053,33 +3059,35 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
   const completionReported = useRef(false);
   const [paddle, setPaddle] = useState(50);
   const [paddleWidth, setPaddleWidth] = useState(breakoutDefaultPaddleWidth);
-  const [balls, setBalls] = useState<IceBall[]>(() => [{ id: 0, x: 50, y: 80, vx: 0.012, vy: -0.024, bigHits: 0 }]);
+  const [balls, setBalls] = useState<IceBall[]>(() => [{ id: 0, x: 50, y: 80, vx: breakoutInitialBallVx, vy: breakoutInitialBallVy, bigHits: 0 }]);
   const [powerups, setPowerups] = useState<BreakoutPowerup[]>([]);
   const [shots, setShots] = useState<IceShot[]>([]);
   const [ammo, setAmmo] = useState(0);
+  const [ultimateCharge, setUltimateCharge] = useState(0);
   const [bricks, setBricks] = useState<IceBrick[]>(() => createIceBricks());
   const [shield, setShield] = useState(3);
   const [score, setScore] = useState(0);
   const [hitCount, setHitCount] = useState(0);
   const [status, setStatus] = useState<BreakoutStatus>('ready');
-  const [dialogue, setDialogue] = useState('結界要靠你的節奏撐住。');
+  const [dialogue, setDialogue] = useState('冰晶法陣待命。');
 
   const resetBall = useCallback((nextPaddle = paddleRef.current) => {
     const direction = Math.random() > 0.5 ? 1 : -1;
-    const next = [{ id: nextId.current++, x: nextPaddle, y: 80, vx: direction * 0.012, vy: -0.024, bigHits: 0 }];
+    const next = [{ id: nextId.current++, x: nextPaddle, y: 80, vx: direction * breakoutInitialBallVx, vy: breakoutInitialBallVy, bigHits: 0 }];
     ballsRef.current = next;
     setBalls(next);
   }, []);
 
   const restart = useCallback(() => {
     const nextBricks = createIceBricks();
-    const nextBall = [{ id: 0, x: 50, y: 80, vx: 0.012, vy: -0.024, bigHits: 0 }];
+    const nextBall = [{ id: 0, x: 50, y: 80, vx: breakoutInitialBallVx, vy: breakoutInitialBallVy, bigHits: 0 }];
     nextId.current = 1;
     bricksRef.current = nextBricks;
     ballsRef.current = nextBall;
     powerupsRef.current = [];
     shotsRef.current = [];
     ammoRef.current = 0;
+    ultimateChargeRef.current = 0;
     shieldRef.current = 3;
     scoreRef.current = 0;
     completionReported.current = false;
@@ -3096,13 +3104,14 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
     setPowerups([]);
     setShots([]);
     setAmmo(0);
+    setUltimateCharge(0);
     setPaddle(50);
     setPaddleWidth(breakoutDefaultPaddleWidth);
     setShield(3);
     setScore(0);
     setHitCount(0);
     setStatus('ready');
-    setDialogue('結界要靠你的節奏撐住。');
+    setDialogue('冰晶法陣待命。');
   }, []);
 
   const startRound = useCallback(() => {
@@ -3110,8 +3119,45 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
     statusRef.current = 'playing';
     lastTime.current = null;
     setStatus('playing');
-    setDialogue('讓冰晶球穿透污染冰牆。');
+    setDialogue('冰晶球已加速展開。');
     playGameSfx('select');
+  }, []);
+
+  const triggerUltimate = useCallback(() => {
+    if (statusRef.current !== 'playing' || ultimateChargeRef.current < breakoutUltimateChargeMax) return;
+    const source = ballsRef.current[0] ?? {
+      id: nextId.current++,
+      x: paddleRef.current,
+      y: 80,
+      vx: breakoutInitialBallVx,
+      vy: breakoutInitialBallVy,
+      bigHits: 0,
+    };
+    const spread = [-0.044, -0.024, 0, 0.024, 0.044];
+    const nextBalls = ballsRef.current.slice(0, breakoutMaxBalls).map((ball) => ({
+      ...ball,
+      vy: -Math.abs(ball.vy || breakoutInitialBallVy),
+      bigHits: Math.max(ball.bigHits, 6),
+    }));
+    while (nextBalls.length < Math.min(breakoutUltimateBallCount, breakoutMaxBalls)) {
+      const index = nextBalls.length;
+      nextBalls.push({
+        id: nextId.current++,
+        x: clamp(source.x + (index - 2) * 1.4, 8, 92),
+        y: Math.min(source.y, 80),
+        vx: spread[index % spread.length],
+        vy: breakoutInitialBallVy * 1.08,
+        bigHits: 6,
+      });
+    }
+    ballsRef.current = nextBalls;
+    ammoRef.current = Math.min(60, ammoRef.current + breakoutUltimateShots);
+    ultimateChargeRef.current = 0;
+    setBalls(nextBalls);
+    setAmmo(ammoRef.current);
+    setUltimateCharge(0);
+    setDialogue('冰晶大絕展開，五球連射。');
+    playGameSfx('level');
   }, []);
 
   const movePaddle = useCallback((clientX: number) => {
@@ -3174,13 +3220,14 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
         const bigRadius = 2.1;
         const paddleWidth = paddleWidthRef.current;
         const paddleY = 91;
-        const speedFactor = 1 + (breakoutSpeedLevel(hitCountRef.current) - 1) * 0.16;
+        const speedFactor = 1.04 + (breakoutSpeedLevel(hitCountRef.current) - 1) * 0.14;
         let nextBricks = bricksRef.current;
         let nextPowerups = powerupsRef.current;
         let nextShots = shotsRef.current;
         let nextAmmo = ammoRef.current;
         let scoreGain = 0;
         let hitGain = 0;
+        let ultimateGain = 0;
         let lastPoints = 0;
 
         const spawnPowerup = (x: number, y: number, chance: number) => {
@@ -3204,6 +3251,7 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
           lastPoints = points;
           scoreGain += points;
           hitGain += 1;
+          ultimateGain += brick.kind === 'core' ? 22 : brick.kind === 'corrupt' ? 14 : 10;
           spawnPowerup(
             brick.x + brick.width / 2,
             brick.y + brick.height / 2,
@@ -3265,8 +3313,8 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
             ) {
               const offset = (nextBall.x - paddleRef.current) / (paddleWidth / 2);
               nextBall.y = paddleY - currentRadius - 1.4;
-              nextBall.vx = clamp(offset * 0.03 + nextBall.vx * 0.28, -0.04, 0.04);
-              nextBall.vy = -0.028 - Math.min(0.008, Math.abs(offset) * 0.005);
+              nextBall.vx = clamp(offset * 0.034 + nextBall.vx * 0.28, -0.046, 0.046);
+              nextBall.vy = -0.033 - Math.min(0.009, Math.abs(offset) * 0.005);
             }
 
             const collisions = nextBricks
@@ -3330,9 +3378,9 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
             if (caught) {
               playGameSfx(isNegativeBreakoutPowerup(powerup.kind) ? 'hit' : 'powerup');
               if (powerup.kind === 'split2') {
-                const source = nextBalls[0] ?? { id: nextId.current++, x: paddleRef.current, y: 80, vx: 0.012, vy: -0.024, bigHits: 0 };
+                const source = nextBalls[0] ?? { id: nextId.current++, x: paddleRef.current, y: 80, vx: breakoutInitialBallVx, vy: breakoutInitialBallVy, bigHits: 0 };
                 if (nextBalls.length < breakoutMaxBalls) {
-                  nextBalls.push({ ...source, id: nextId.current++, vx: -source.vx || 0.018, vy: -Math.abs(source.vy || 0.024) });
+                  nextBalls.push({ ...source, id: nextId.current++, vx: -source.vx || 0.022, vy: -Math.abs(source.vy || breakoutInitialBallVy) });
                   setDialogue('冰晶球分裂成兩顆。');
                 } else {
                   setDialogue('冰晶球已經滿場飛舞，力量轉成分數。');
@@ -3340,9 +3388,9 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
                 }
               }
               if (powerup.kind === 'split5') {
-                const source = nextBalls[0] ?? { id: nextId.current++, x: paddleRef.current, y: 80, vx: 0.012, vy: -0.024, bigHits: 0 };
+                const source = nextBalls[0] ?? { id: nextId.current++, x: paddleRef.current, y: 80, vx: breakoutInitialBallVx, vy: breakoutInitialBallVy, bigHits: 0 };
                 [-0.034, -0.018, 0.018, 0.034].slice(0, Math.max(0, breakoutMaxBalls - nextBalls.length)).forEach((vx) => {
-                  nextBalls.push({ ...source, id: nextId.current++, vx, vy: -Math.abs(source.vy || 0.024) });
+                  nextBalls.push({ ...source, id: nextId.current++, vx, vy: -Math.abs(source.vy || breakoutInitialBallVy) });
                 });
                 setDialogue(nextBalls.length >= breakoutMaxBalls ? '五重冰晶球展開，場上力量已達上限。' : '五重冰晶球展開。');
               }
@@ -3403,8 +3451,10 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
         if (hitGain > 0) {
           hitCountRef.current += hitGain;
           scoreRef.current += scoreGain;
+          ultimateChargeRef.current = Math.min(breakoutUltimateChargeMax, ultimateChargeRef.current + ultimateGain);
           setHitCount(hitCountRef.current);
           setScore(scoreRef.current);
+          setUltimateCharge(ultimateChargeRef.current);
           const nextSpeedLevel = breakoutSpeedLevel(hitCountRef.current);
           setDialogue(lastPoints >= 80 ? `核心鬆動了，球速升到 LV${nextSpeedLevel}。` : `打得好，球速 LV${nextSpeedLevel}。`);
         }
@@ -3444,6 +3494,8 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
   const remaining = bricks.filter((brick) => brick.hp > 0).length;
   const totalBricks = bricks.length;
   const speedLevel = breakoutSpeedLevel(hitCount);
+  const ultimatePercent = Math.round((ultimateCharge / breakoutUltimateChargeMax) * 100);
+  const ultimateReady = ultimateCharge >= breakoutUltimateChargeMax;
 
   return (
     <section className="screen breakout-screen">
@@ -3456,13 +3508,6 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
           </button>
         }
       />
-      <div className="breakout-cast-panel">
-        <img className="breakout-cast snow" src={assets.snowSealHost} alt="" aria-hidden="true" />
-        <div className="breakout-dialogue">
-          <p>{dialogue}</p>
-        </div>
-        <img className="breakout-cast silver" src={assets.silverbackHost} alt="" aria-hidden="true" />
-      </div>
       <div
         className="breakout-field"
         ref={fieldRef}
@@ -3475,8 +3520,10 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
           <span>結界 {shield}/3</span>
           <span>淨化 {totalBricks - remaining}/{totalBricks}</span>
           <span>球速 LV{speedLevel}</span>
+          <span>大絕 {ultimatePercent}%</span>
           <span>{score}</span>
         </div>
+        <div className="breakout-callout" key={dialogue}>{dialogue}</div>
 
         <div className="breakout-bricks" aria-hidden="true">
           {bricks.map((brick) => (
@@ -3513,6 +3560,17 @@ function IceBreakoutGame({ onBack, onComplete }: { onBack: () => void; onComplet
           <span />
           {ammo > 0 && <em>{ammo}</em>}
         </div>
+        <button
+          className={`breakout-ultimate ${ultimateReady ? 'ready' : ''}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={triggerUltimate}
+          disabled={!ultimateReady || status !== 'playing'}
+          aria-label={`冰晶大絕，${ultimateReady ? '可發動' : `充能 ${ultimatePercent}%`}`}
+        >
+          <Sparkles size={18} />
+          <strong>大絕</strong>
+          <small>{ultimateReady ? '五球連射' : `${ultimatePercent}%`}</small>
+        </button>
 
         {status === 'ready' && (
           <div className="breakout-start-gate">
