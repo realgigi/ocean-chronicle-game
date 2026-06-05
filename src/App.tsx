@@ -50,16 +50,16 @@ const sceneDisplayNames: Record<PlayableScene, string> = {
   revelation: '王國冰晶',
 };
 const sceneShortHints: Record<PlayableScene, string> = {
-  combat: '自動射擊',
-  memory: '找成對',
-  breakout: '守球破冰',
-  minefield: '先探再旗',
-  snowfield: '拖曳布陣',
-  snake: '吃光點',
-  tower: '滑動下樓',
-  city: '格戰射擊',
-  lightbomb: '光爆開門',
-  revelation: '圈地開圖',
+  combat: '射擊',
+  memory: '翻牌',
+  breakout: '打磚塊',
+  minefield: '掃雷',
+  snowfield: '打雪杖',
+  snake: '貪食蛇',
+  tower: '下樓梯',
+  city: '坦克大戰',
+  lightbomb: '炸彈人',
+  revelation: '天蠶變',
 };
 const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
   combat: [900, 1300, 1500],
@@ -2861,14 +2861,15 @@ function EpisodeMap({
           const cleared = Boolean(entry?.cleared);
           const best = entry?.best ?? 0;
           const stars = progressStars(scene, entry);
+          const nodeLabel = `${name} (${sceneShortHints[scene]})`;
           return (
           <button
             key={name}
             className={`map-node ${style}${cleared ? ' cleared' : ''}`}
             onClick={onClick}
-            aria-label={`${name}，${cleared ? `已通關，${stars} 星，最佳 ${formatBestScore(best) || '未計分'}` : sceneShortHints[scene]}`}
+            aria-label={`${nodeLabel}，${cleared ? `已通關，${stars} 星，最佳 ${formatBestScore(best) || '未計分'}` : '尚未通關'}`}
           >
-            <span>{name}</span>
+            <span>{nodeLabel}</span>
             <small className="map-node-meta">
               {cleared ? (
                 <>
@@ -2876,7 +2877,7 @@ function EpisodeMap({
                   {best > 0 && <strong>{formatBestScore(best)}</strong>}
                 </>
               ) : (
-                sceneShortHints[scene]
+                '未通關'
               )}
             </small>
           </button>
