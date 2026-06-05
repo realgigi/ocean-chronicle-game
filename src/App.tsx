@@ -580,6 +580,7 @@ type BreakthroughShot = {
   chargeStage?: CityChargeStage;
   spread?: boolean;
   double?: boolean;
+  overcharged?: boolean;
 };
 type BreakthroughPowerup = {
   id: number;
@@ -6920,36 +6921,72 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
           const spreadLevel = breakthroughEffectiveUpgradeLevel(stats, upgrades, 'spread');
           const doubleLevel = breakthroughEffectiveUpgradeLevel(stats, upgrades, 'double');
           const powerLevel = breakthroughEffectiveUpgradeLevel(stats, upgrades, 'power');
+          const chargeLevel = breakthroughEffectiveUpgradeLevel(stats, upgrades, 'charge');
           const charged = chargeToFire > 0;
-          const piercing = pierceLevel > 0 || charged;
-          const big = Boolean(stats.big || powerLevel >= 3 || chargeToFire === 2);
-          const shotSpeed = stats.shotSpeed * (1 + rapidLevel * 0.075 + (charged ? 0.05 : 0));
-          const damage = stats.damage + Math.floor((powerLevel + 1) / 2) + chargeToFire;
-          const makeShot = (sideOffset: number, sideVelocity: number, tags: Pick<BreakthroughShot, 'spread' | 'double'> = {}): BreakthroughShot => ({
+          const piercing = pierceLevel > 0 || chargeToFire === 2 || (charged && chargeLevel >= 2);
+          const overcharged = charged && (chargeToFire === 2 || powerLevel >= 3 || chargeLevel >= 3);
+          const big = Boolean(stats.big || powerLevel >= 2 || chargeToFire === 2 || (charged && chargeLevel >= 2));
+          const shotSpeed = stats.shotSpeed * (1 + rapidLevel * 0.075 + (charged ? 0.06 + chargeLevel * 0.025 : 0));
+          const baseDamage = stats.damage + Math.floor((powerLevel + 1) / 2) + (charged ? chargeToFire + chargeLevel + Math.floor(pierceLevel / 2) : 0);
+          const makeShot = (
+            sideOffset: number,
+            sideVelocity: number,
+            tags: Pick<BreakthroughShot, 'spread' | 'double' | 'overcharged'> = {},
+            damageValue = baseDamage,
+            speedScale = 1,
+          ): BreakthroughShot => ({
             id: nextId.current++,
             side: 'ally',
             x: currentPlayer.x + vector.x * 0.58 + side.x * sideOffset,
             y: currentPlayer.y + vector.y * 0.58 + side.y * sideOffset,
-            vx: vector.x * shotSpeed + side.x * sideVelocity,
-            vy: vector.y * shotSpeed + side.y * sideVelocity,
+            vx: vector.x * shotSpeed * speedScale + side.x * sideVelocity,
+            vy: vector.y * shotSpeed * speedScale + side.y * sideVelocity,
             dir: currentPlayer.dir,
-            damage,
+            damage: damageValue,
             piercing,
             big,
             chargeStage: charged ? chargeToFire : undefined,
             ...tags,
           });
-          const nextShots = [makeShot(0, 0)];
-          if (!charged && doubleLevel >= 1) nextShots.push(makeShot(0.25, 0, { double: true }), makeShot(-0.25, 0, { double: true }));
-          if (!charged && doubleLevel >= 3) nextShots.push(makeShot(0.48, 0, { double: true }), makeShot(-0.48, 0, { double: true }));
-          if (!charged && spreadLevel >= 1) {
-            const spreadSpeed = 0.0048 + spreadLevel * 0.0014;
-            nextShots.push(makeShot(0, spreadSpeed, { spread: true }), makeShot(0, -spreadSpeed, { spread: true }));
-            if (spreadLevel >= 3) nextShots.push(makeShot(0.18, spreadSpeed * 1.28, { spread: true }), makeShot(-0.18, -spreadSpeed * 1.28, { spread: true }));
+          const nextShots = [makeShot(0, 0, { overcharged })];
+          if (charged) {
+            const sideBoltDamage = Math.max(1, baseDamage - 1);
+            const shardDamage = Math.max(1, Math.ceil(baseDamage * 0.58));
+            if (doubleLevel >= 1) {
+              const offset = 0.24 + doubleLevel * 0.08;
+              nextShots.push(
+                makeShot(offset, 0, { double: true, overcharged }, sideBoltDamage, 0.96),
+                makeShot(-offset, 0, { double: true, overcharged }, sideBoltDamage, 0.96),
+              );
+            }
+            if (spreadLevel >= 1) {
+              const spreadSpeed = 0.0046 + spreadLevel * 0.0016 + chargeLevel * 0.0008;
+              nextShots.push(
+                makeShot(0, spreadSpeed, { spread: true, overcharged }, shardDamage, 0.94),
+                makeShot(0, -spreadSpeed, { spread: true, overcharged }, shardDamage, 0.94),
+              );
+              if (spreadLevel >= 3) {
+                nextShots.push(
+                  makeShot(0.18, spreadSpeed * 1.35, { spread: true, overcharged }, shardDamage, 0.9),
+                  makeShot(-0.18, -spreadSpeed * 1.35, { spread: true, overcharged }, shardDamage, 0.9),
+                );
+              }
+            }
+            if (chargeLevel >= 3 && rapidLevel >= 2) {
+              nextShots.push(makeShot(0, 0, { overcharged: true }, Math.max(1, Math.ceil(baseDamage * 0.5)), 0.72));
+            }
+          } else {
+            if (doubleLevel >= 1) nextShots.push(makeShot(0.25, 0, { double: true }), makeShot(-0.25, 0, { double: true }));
+            if (doubleLevel >= 3) nextShots.push(makeShot(0.48, 0, { double: true }), makeShot(-0.48, 0, { double: true }));
+            if (spreadLevel >= 1) {
+              const spreadSpeed = 0.0048 + spreadLevel * 0.0014;
+              nextShots.push(makeShot(0, spreadSpeed, { spread: true }), makeShot(0, -spreadSpeed, { spread: true }));
+              if (spreadLevel >= 3) nextShots.push(makeShot(0.18, spreadSpeed * 1.28, { spread: true }), makeShot(-0.18, -spreadSpeed * 1.28, { spread: true }));
+            }
           }
           shotsRef.current = [...shotsRef.current, ...nextShots].slice(-72);
           currentPlayer.cooldown = charged
-            ? (chargeToFire === 2 ? 860 : 680) * (1 - rapidLevel * 0.05)
+            ? (chargeToFire === 2 ? 860 : 680) * (1 - rapidLevel * 0.06 - chargeLevel * 0.035)
             : stats.cooldownMs * (1 - rapidLevel * 0.16) + spreadLevel * 28 + doubleLevel * 28;
           playGameSfx(charged || big ? 'blast' : 'shoot');
         }
@@ -7027,7 +7064,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
           if (canceledShots.has(movedShots[i].id)) continue;
           for (let j = i + 1; j < movedShots.length; j += 1) {
             if (canceledShots.has(movedShots[j].id) || movedShots[i].side === movedShots[j].side) continue;
-            const cancelRadius = movedShots[i].big || movedShots[j].big ? 0.72 : 0.5;
+            const cancelRadius = movedShots[i].overcharged || movedShots[j].overcharged ? 0.86 : movedShots[i].big || movedShots[j].big ? 0.72 : 0.5;
             if (Math.hypot(movedShots[i].x - movedShots[j].x, movedShots[i].y - movedShots[j].y) < cancelRadius) {
               canceledShots.add(movedShots[i].id);
               canceledShots.add(movedShots[j].id);
@@ -7053,7 +7090,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
             return;
           }
           if (shot.side === 'ally') {
-            const radius = shot.big ? 0.78 : 0.48;
+            const radius = shot.overcharged ? 0.96 : shot.big ? 0.78 : 0.48;
             const target = nextEnemies.find((enemy) => enemy.hp > 0 && Math.hypot(enemy.x - shot.x, enemy.y - shot.y) < radius);
             if (target) {
               target.hp -= shot.damage;
@@ -7284,7 +7321,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
               <img src={lightBombCharacterDef(visualPlayer.character).image} alt="" />
             </div>
             {shots.map((shot) => (
-              <span className={`breakthrough-shot ${shot.side} dir-${shot.dir} ${shot.big ? 'big' : ''} ${shot.piercing ? 'piercing' : ''} ${shot.spread ? 'spread' : ''} ${shot.double ? 'double' : ''} ${shot.chargeStage ? `charged charge-${shot.chargeStage}` : ''}`} key={shot.id} style={tokenStyle(shot.x, shot.y)} />
+              <span className={`breakthrough-shot ${shot.side} dir-${shot.dir} ${shot.big ? 'big' : ''} ${shot.piercing ? 'piercing' : ''} ${shot.spread ? 'spread' : ''} ${shot.double ? 'double' : ''} ${shot.overcharged ? 'overcharged' : ''} ${shot.chargeStage ? `charged charge-${shot.chargeStage}` : ''}`} key={shot.id} style={tokenStyle(shot.x, shot.y)} />
             ))}
           </div>
           <div className="breakthrough-hud">
