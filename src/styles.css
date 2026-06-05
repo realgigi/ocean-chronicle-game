@@ -3764,11 +3764,7 @@ button:disabled {
 }
 
 .city-powerup img {
-  width: 118%;
-  height: 118%;
-  object-fit: contain;
-  opacity: 0.54;
-  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.52));
+  display: none;
 }
 
 .city-powerup.speed {
@@ -4533,6 +4529,8 @@ button:disabled {
 
 .breakthrough-player img,
 .breakthrough-enemy img {
+  position: relative;
+  z-index: 1;
   width: 132%;
   height: 132%;
   object-fit: contain;
@@ -4564,12 +4562,44 @@ button:disabled {
   animation: breakthroughChargePulse 0.95s ease-in-out infinite alternate;
 }
 
+.breakthrough-player.charging::before {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  z-index: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(123, 239, 255, 0.72);
+  background: radial-gradient(circle, rgba(122, 238, 255, 0.16), transparent 64%);
+  box-shadow:
+    0 0 0 4px rgba(123, 239, 255, 0.1),
+    0 0 22px rgba(123, 239, 255, 0.48);
+  animation: breakthroughChargeRing 0.9s ease-in-out infinite alternate;
+}
+
 .breakthrough-player.charging.charge-1 {
   background: radial-gradient(circle, rgba(255, 240, 146, 0.58), rgba(83, 213, 225, 0.22) 58%, transparent 72%);
 }
 
+.breakthrough-player.charging.charge-1::before {
+  border-color: rgba(255, 226, 106, 0.82);
+  background: radial-gradient(circle, rgba(255, 226, 106, 0.18), transparent 64%);
+  box-shadow:
+    0 0 0 5px rgba(255, 226, 106, 0.12),
+    0 0 26px rgba(255, 226, 106, 0.58);
+}
+
 .breakthrough-player.charging.charge-2 {
   background: radial-gradient(circle, rgba(255, 125, 184, 0.62), rgba(122, 91, 238, 0.28) 58%, transparent 72%);
+}
+
+.breakthrough-player.charging.charge-2::before {
+  inset: -18%;
+  border-color: rgba(255, 128, 198, 0.88);
+  background: radial-gradient(circle, rgba(255, 128, 198, 0.22), transparent 64%);
+  box-shadow:
+    0 0 0 6px rgba(255, 128, 198, 0.14),
+    0 0 32px rgba(255, 128, 198, 0.68),
+    0 0 44px rgba(132, 78, 255, 0.34);
 }
 
 .breakthrough-enemy {
@@ -4741,6 +4771,18 @@ button:disabled {
     filter:
       drop-shadow(0 9px 13px rgba(0, 0, 0, 0.34))
       drop-shadow(0 0 28px rgba(255, 226, 109, 0.66));
+  }
+}
+
+@keyframes breakthroughChargeRing {
+  from {
+    transform: scale(0.94);
+    opacity: 0.72;
+  }
+
+  to {
+    transform: scale(1.08);
+    opacity: 1;
   }
 }
 
