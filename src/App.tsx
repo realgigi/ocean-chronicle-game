@@ -372,6 +372,7 @@ type TowerMonster = {
 
 type CityDirection = 'up' | 'down' | 'left' | 'right';
 type CityTileKind = 'coral' | 'stone' | 'seaweed' | 'current' | 'vent' | 'crystal' | 'trench' | 'rubble';
+type CityChargeStage = 0 | 1 | 2;
 type CityTile = {
   id: number;
   kind: CityTileKind;
@@ -402,6 +403,8 @@ type CityShot = {
   piercing?: boolean;
   spread?: boolean;
   double?: boolean;
+  chargeStage?: CityChargeStage;
+  damage?: number;
 };
 type CityPowerupKind = 'speed' | 'shield' | 'armor' | 'fortify' | 'freeze' | 'blast' | 'pierce' | 'repair' | 'spread' | 'double' | 'magnet' | 'dash' | 'jam';
 type CityPowerup = {
@@ -1083,6 +1086,8 @@ const cityPlayerStepDelayMs = 162;
 const cityPlayerMoveMs = 148;
 const cityTurnRetryMs = 42;
 const cityTurnBufferMs = 54;
+const cityChargeStageOneMs = 650;
+const cityChargeStageTwoMs = 1350;
 const cityStartingBaseHp = 4;
 const cityStartingArmor = 4;
 const cityMaxHp = 5;
@@ -1532,6 +1537,20 @@ function gridDistanceSettled(logical: { x: number; y: number }, visual: { x: num
 
 function gridCellLabel(col: number, row: number) {
   return `${col},${row}`;
+}
+
+function cityChargeStageForDuration(durationMs: number): CityChargeStage {
+  if (durationMs >= cityChargeStageTwoMs) return 2;
+  if (durationMs >= cityChargeStageOneMs) return 1;
+  return 0;
+}
+
+function cityShotHitRadius(shot: CityShot) {
+  return cityCellSize * (shot.chargeStage ? 0.9 : 0.38);
+}
+
+function cityShotUnitHitRadius(shot: CityShot) {
+  return cityUnitSize * (shot.chargeStage ? 0.98 : 0.62);
 }
 
 function cityCellCenter(index: number) {
@@ -5032,6 +5051,10 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
   const shotsRef = useRef<CityShot[]>([]);
   const powerupsRef = useRef<CityPowerup[]>([]);
   const keysRef = useRef({ fire: false });
+  const firePointerRef = useRef<number | null>(null);
+  const fireChargeStartedAtRef = useRef<number | null>(null);
+  const pendingChargeShotRef = useRef<CityChargeStage | null>(null);
+  const chargeStageRef = useRef<CityChargeStage | -1>(-1);
   const heldDirectionRef = useRef<DirectionPadIntent>(null);
   const diagonalAxisRef = useRef<'horizontal' | 'vertical'>('horizontal');
   const nextPlayerStepAt = useRef(0);
@@ -5060,6 +5083,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
   const [magnetUntil, setMagnetUntil] = useState(0);
   const [dashUntil, setDashUntil] = useState(0);
   const [jamUntil, setJamUntil] = useState(0);
+  const [chargeStage, setChargeStage] = useState<CityChargeStage | -1>(-1);
   const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
   const [padVector, setPadVector] = useState<DirectionPadVector>({ x: 0, y: 0 });
   const [notice, setNotice] = useState<CityNotice | null>(null);
@@ -5165,6 +5189,10 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
     shotsRef.current = [];
     powerupsRef.current = [];
     keysRef.current = { fire: false };
+    firePointerRef.current = null;
+    fireChargeStartedAtRef.current = null;
+    pendingChargeShotRef.current = null;
+    chargeStageRef.current = -1;
     heldDirectionRef.current = null;
     diagonalAxisRef.current = 'horizontal';
     movePointerRef.current = null;
@@ -5188,6 +5216,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
     setKills(0);
     setCityLevel(nextLevel);
     setStatus('playing');
+    setChargeStage(-1);
     setPadDirection(null);
     setPadVector({ x: 0, y: 0 });
     if (options.resetAbilities) {
@@ -5310,8 +5339,30 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
     }
   }, [facePlayerDirection, movePlayerIntent]);
 
-  const setFirePressed = useCallback((pressed: boolean) => {
-    keysRef.current.fire = pressed;
+  const setFirePressed = useCallback((pressed: boolean, options: { releaseShot?: boolean } = {}) => {
+    const now = performance.now();
+    if (pressed) {
+      if (statusRef.current !== 'playing' || keysRef.current.fire) return;
+      keysRef.current.fire = true;
+      fireChargeStartedAtRef.current = now;
+      chargeStageRef.current = 0;
+      setChargeStage(0);
+      return;
+    }
+    if (!keysRef.current.fire) {
+      chargeStageRef.current = -1;
+      fireChargeStartedAtRef.current = null;
+      setChargeStage(-1);
+      return;
+    }
+    const stage = cityChargeStageForDuration(now - (fireChargeStartedAtRef.current ?? now));
+    keysRef.current.fire = false;
+    fireChargeStartedAtRef.current = null;
+    chargeStageRef.current = -1;
+    setChargeStage(-1);
+    if (options.releaseShot !== false && statusRef.current === 'playing') {
+      pendingChargeShotRef.current = Math.max(pendingChargeShotRef.current ?? 0, stage) as CityChargeStage;
+    }
   }, []);
 
   const finishSwipeMove = useCallback((clientX: number, clientY: number) => {
@@ -5342,13 +5393,18 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
   const pressCityFire = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    if (firePointerRef.current !== null) return;
+    firePointerRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
     setFirePressed(true);
   }, [setFirePressed]);
 
-  const releaseCityFire = useCallback((event?: ReactPointerEvent<HTMLButtonElement>) => {
+  const releaseCityFire = useCallback((event?: ReactPointerEvent<HTMLButtonElement>, releaseShot = true) => {
     event?.preventDefault();
     event?.stopPropagation();
-    setFirePressed(false);
+    if (event && firePointerRef.current !== null && event.pointerId !== firePointerRef.current) return;
+    firePointerRef.current = null;
+    setFirePressed(false, { releaseShot });
   }, [setFirePressed]);
 
   useEffect(() => {
@@ -5357,7 +5413,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
     };
     const clearControls = () => {
       releaseMovePad();
-      releaseCityFire();
+      releaseCityFire(undefined, false);
     };
     window.addEventListener('pointerup', releaseMatchingMove);
     window.addEventListener('pointercancel', releaseMatchingMove);
@@ -5440,38 +5496,52 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
         const spread = spreadUntilRef.current > time;
         const double = doubleUntilRef.current > time;
         const magnet = magnetUntilRef.current > time;
-        if (keysRef.current.fire && currentPlayer.cooldown <= 0) {
+        if (keysRef.current.fire) {
+          const nextChargeStage = cityChargeStageForDuration(time - (fireChargeStartedAtRef.current ?? time));
+          if (chargeStageRef.current !== nextChargeStage) {
+            chargeStageRef.current = nextChargeStage;
+            setChargeStage(nextChargeStage);
+            if (nextChargeStage > 0) playGameSfx('powerup');
+          }
+        }
+        const chargeToFire = pendingChargeShotRef.current;
+        if (chargeToFire !== null && currentPlayer.cooldown <= 0) {
+          pendingChargeShotRef.current = null;
           const vector = cityDirectionVector(currentPlayer.dir);
           const side = citySideVector(currentPlayer.dir);
-          const shotSpeed = piercing ? 0.056 : 0.052;
+          const charged = chargeToFire > 0;
+          const shotSpeed = charged ? 0.062 : piercing ? 0.056 : 0.052;
+          const damage = chargeToFire === 2 ? 2 : 1;
           const makeAllyShot = (sideOffset: number, sideVelocity: number, flags: Pick<CityShot, 'spread' | 'double'> = {}): CityShot => ({
             id: nextId.current++,
             side: 'ally',
-            x: currentPlayer.x + vector.x * cityCellSize * 0.62 + side.x * cityCellSize * sideOffset,
-            y: currentPlayer.y + vector.y * cityCellSize * 0.62 + side.y * cityCellSize * sideOffset,
+            x: currentPlayer.x + vector.x * cityCellSize * (charged ? 0.78 : 0.62) + side.x * cityCellSize * sideOffset,
+            y: currentPlayer.y + vector.y * cityCellSize * (charged ? 0.78 : 0.62) + side.y * cityCellSize * sideOffset,
             vx: vector.x * shotSpeed + side.x * sideVelocity,
             vy: vector.y * shotSpeed + side.y * sideVelocity,
             dir: currentPlayer.dir,
-            piercing,
+            piercing: piercing || charged,
+            chargeStage: charged ? chargeToFire : undefined,
+            damage,
             ...flags,
           });
           const allyShots = [makeAllyShot(0, 0)];
-          if (double) {
+          if (!charged && double) {
             allyShots.push(makeAllyShot(0.36, 0, { double: true }), makeAllyShot(-0.36, 0, { double: true }));
           }
-          if (spread) {
+          if (!charged && spread) {
             allyShots.push(makeAllyShot(0, 0.021, { spread: true }), makeAllyShot(0, -0.021, { spread: true }));
           }
           shotsRef.current = [
             ...shotsRef.current,
             ...allyShots,
           ].slice(-30);
-          playGameSfx('shoot');
-          currentPlayer.cooldown = rapid ? 390 : 650;
-          if (spread) {
+          playGameSfx(charged ? 'blast' : 'shoot');
+          currentPlayer.cooldown = charged ? (chargeToFire === 2 ? 980 : 820) : rapid ? 390 : 650;
+          if (!charged && spread) {
             currentPlayer.cooldown += 90;
           }
-          if (double) {
+          if (!charged && double) {
             currentPlayer.cooldown += 60;
           }
         }
@@ -5566,12 +5636,13 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
         }
         movedShots.forEach((moved) => {
           if (canceledShots.has(moved.id)) return;
-          const wallHitIndex = nextTiles.findIndex((tile) => cityTileBlocks(tile) && cityIntersectsRect(moved.x, moved.y, cityCellSize * 0.38, tile));
+          const shotDamage = moved.damage ?? 1;
+          const wallHitIndex = nextTiles.findIndex((tile) => cityTileBlocks(tile) && cityIntersectsRect(moved.x, moved.y, cityShotHitRadius(moved), tile));
           if (wallHitIndex >= 0) {
             const tile = nextTiles[wallHitIndex];
             if (cityTileBreaks(tile)) {
               if (!tilesChanged) nextTiles = [...nextTiles];
-              const nextHp = (tile.hp ?? 1) - 1;
+              const nextHp = (tile.hp ?? 1) - shotDamage;
               if (nextHp <= 0) {
                 nextTiles.splice(wallHitIndex, 1);
               } else {
@@ -5586,9 +5657,9 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
           }
 
           if (moved.side === 'ally') {
-            const target = nextEnemies.find((enemy) => Math.hypot(enemy.x - moved.x, enemy.y - moved.y) < cityUnitSize * 0.62);
+            const target = nextEnemies.find((enemy) => Math.hypot(enemy.x - moved.x, enemy.y - moved.y) < cityShotUnitHitRadius(moved));
             if (target) {
-              target.hp -= 1;
+              target.hp -= shotDamage;
               if (target.hp <= 0) {
                 nextKills += 1;
                 playGameSfx('blast');
@@ -5793,6 +5864,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
   const dashActive = dashUntil > cityRenderTime;
   const enemiesFrozen = freezeUntil > cityRenderTime;
   const enemiesJammed = jamUntil > cityRenderTime;
+  const chargeLabel = chargeStage === 2 ? '二段' : chargeStage === 1 ? '一段' : chargeStage === 0 ? '集氣' : '攻擊';
   const cityPadStickStyle: CSSProperties = {
     ['--pad-x' as string]: `${padVector.x}px`,
     ['--pad-y' as string]: `${padVector.y}px`,
@@ -5803,6 +5875,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
     { label: 'intent', value: directionPadIntentLabel(heldDirectionRef.current) },
     { label: 'busy', value: !gridDistanceSettled(playerRef.current, visualPlayerRef.current, cityCellSize * 0.1) },
     { label: 'next', value: Number.isFinite(nextPlayerStepAt.current) ? Math.max(0, Math.round(nextPlayerStepAt.current - cityRenderTime)) : 'idle' },
+    { label: 'charge', value: chargeStage >= 0 ? chargeLabel : pendingChargeShotRef.current !== null ? `pending-${pendingChargeShotRef.current}` : 'idle' },
     { label: 'last', value: cityMoveDebugRef.current.last },
     { label: 'moves', value: `${cityMoveDebugRef.current.committed}/${cityMoveDebugRef.current.attempts}` },
   ];
@@ -5853,11 +5926,11 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
                 <i style={{ width: `${enemy.hp * 50}%` }} />
               </div>
             ))}
-            <div className={`city-unit player dir-${visualPlayer.dir} ${playerHidden ? 'hidden' : ''} ${shielded ? 'shielded' : ''} ${rapid ? 'rapid' : ''} ${piercing ? 'piercing' : ''} ${spreadActive ? 'spread' : ''} ${doubleActive ? 'double' : ''} ${magnetActive ? 'magnet' : ''} ${dashActive ? 'dash' : ''}`} style={{ left: `${visualPlayer.x}%`, top: `${visualPlayer.y}%` }}>
+            <div className={`city-unit player dir-${visualPlayer.dir} ${playerHidden ? 'hidden' : ''} ${shielded ? 'shielded' : ''} ${rapid ? 'rapid' : ''} ${piercing ? 'piercing' : ''} ${spreadActive ? 'spread' : ''} ${doubleActive ? 'double' : ''} ${magnetActive ? 'magnet' : ''} ${dashActive ? 'dash' : ''} ${chargeStage >= 0 ? `charging charge-${chargeStage}` : ''}`} style={{ left: `${visualPlayer.x}%`, top: `${visualPlayer.y}%` }}>
               <img src={assets.cityUnits.player[visualPlayer.dir]} alt="" />
             </div>
             {shots.map((shot) => (
-              <span className={`city-shot ${shot.side} dir-${shot.dir} ${shot.piercing ? 'piercing' : ''} ${shot.spread ? 'spread' : ''} ${shot.double ? 'double' : ''}`} key={shot.id} style={{ left: `${shot.x}%`, top: `${shot.y}%` }} />
+              <span className={`city-shot ${shot.side} dir-${shot.dir} ${shot.piercing ? 'piercing' : ''} ${shot.spread ? 'spread' : ''} ${shot.double ? 'double' : ''} ${shot.chargeStage ? `charged charge-${shot.chargeStage}` : ''}`} key={shot.id} style={{ left: `${shot.x}%`, top: `${shot.y}%` }} />
             ))}
             {tiles.filter((tile) => tile.kind === 'seaweed').map((tile) => (
               <span className="city-seaweed-cover" key={`cover-${tile.id}`} style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.size}%`, height: `${tile.size}%` }} />
@@ -5907,7 +5980,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
             <span className="city-stick" style={cityPadStickStyle} />
           </div>
           <button
-            className="city-fire-control"
+            className={`city-fire-control ${chargeStage >= 0 ? `charging charge-${chargeStage}` : ''}`}
             onPointerDown={pressCityFire}
             onPointerUp={releaseCityFire}
             onPointerCancel={releaseCityFire}
@@ -5915,6 +5988,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
             aria-label="攻擊"
           >
             <Swords size={24} />
+            <small>{chargeLabel}</small>
           </button>
           {status !== 'playing' && (
             <div className="city-result">

@@ -3513,6 +3513,52 @@ button:disabled {
     0 0 22px rgba(122, 232, 244, 0.62);
 }
 
+.city-unit.player.charging::after {
+  content: "";
+  position: absolute;
+  inset: -14%;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 255, 255, 0.42), transparent 68%);
+  box-shadow:
+    0 0 0 2px rgba(245, 255, 255, 0.2),
+    0 0 20px rgba(245, 255, 255, 0.55);
+  animation: cityChargePulse 0.72s ease-in-out infinite alternate;
+}
+
+.city-unit.player.charge-1::after {
+  background: radial-gradient(circle, rgba(255, 232, 112, 0.56), transparent 68%);
+  box-shadow:
+    0 0 0 3px rgba(255, 225, 105, 0.32),
+    0 0 26px rgba(255, 210, 72, 0.78);
+}
+
+.city-unit.player.charge-2::after {
+  background: radial-gradient(circle, rgba(117, 240, 255, 0.62), rgba(180, 116, 255, 0.22) 48%, transparent 70%);
+  box-shadow:
+    0 0 0 4px rgba(117, 240, 255, 0.34),
+    0 0 30px rgba(117, 240, 255, 0.86),
+    0 0 46px rgba(196, 116, 255, 0.58);
+}
+
+.city-unit.player.charging img {
+  filter:
+    drop-shadow(0 0 10px rgba(245, 255, 255, 0.78))
+    drop-shadow(0 0 18px rgba(255, 235, 148, 0.42));
+}
+
+.city-unit.player.charge-1 img {
+  filter:
+    drop-shadow(0 0 12px rgba(255, 224, 93, 0.92))
+    drop-shadow(0 0 22px rgba(255, 182, 65, 0.62));
+}
+
+.city-unit.player.charge-2 img {
+  filter:
+    drop-shadow(0 0 14px rgba(126, 245, 255, 0.98))
+    drop-shadow(0 0 26px rgba(190, 110, 255, 0.76));
+}
+
 .city-unit.rapid img {
   filter:
     drop-shadow(0 0 9px rgba(255, 235, 115, 0.78))
@@ -3613,6 +3659,27 @@ button:disabled {
   box-shadow:
     0 0 0 2px rgba(160, 248, 255, 0.18),
     0 0 13px rgba(102, 226, 255, 0.8);
+}
+
+.city-shot.charged {
+  width: calc(var(--city-shot-size) * 1.9);
+  height: calc(var(--city-shot-size) * 1.9);
+  background:
+    radial-gradient(circle at 34% 28%, #fff 0 16%, #ffe879 17% 38%, rgba(255, 159, 64, 0.86) 39% 66%, transparent 70%);
+  box-shadow:
+    0 0 0 3px rgba(255, 229, 118, 0.22),
+    0 0 19px rgba(255, 190, 72, 0.82);
+}
+
+.city-shot.charged.charge-2 {
+  width: calc(var(--city-shot-size) * 2.25);
+  height: calc(var(--city-shot-size) * 2.25);
+  background:
+    radial-gradient(circle at 34% 28%, #fff 0 14%, #8ef6ff 15% 36%, rgba(169, 91, 255, 0.9) 37% 66%, transparent 70%);
+  box-shadow:
+    0 0 0 3px rgba(126, 244, 255, 0.26),
+    0 0 22px rgba(126, 244, 255, 0.9),
+    0 0 34px rgba(190, 107, 255, 0.52);
 }
 
 .city-powerup {
@@ -3986,9 +4053,54 @@ button:disabled {
   user-select: none;
 }
 
+.city-fire-control small {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  color: rgba(42, 24, 6, 0.86);
+  font-size: 10px;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .city-fire-control:active {
   transform: translateY(1px) scale(0.96);
   filter: brightness(1.08);
+}
+
+.city-fire-control.charging {
+  color: #15202a;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.96), transparent 22%),
+    linear-gradient(135deg, #f3fbff, #8eefff);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.34),
+    0 0 20px rgba(205, 255, 255, 0.54),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.62);
+}
+
+.city-fire-control.charge-1 {
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.96), transparent 22%),
+    linear-gradient(135deg, #fff2a9, #f2b73c);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.34),
+    0 0 24px rgba(255, 207, 80, 0.72),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.64);
+}
+
+.city-fire-control.charge-2 {
+  color: #071926;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.98), transparent 21%),
+    linear-gradient(135deg, #8df6ff, #c284ff 62%, #fff0a2);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.34),
+    0 0 28px rgba(113, 239, 255, 0.82),
+    0 0 42px rgba(190, 104, 255, 0.46),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.66);
 }
 
 .city-result {
@@ -4040,6 +4152,18 @@ button:disabled {
   100% {
     opacity: 0;
     transform: scale(1.35);
+  }
+}
+
+@keyframes cityChargePulse {
+  from {
+    opacity: 0.62;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1.08);
   }
 }
 
