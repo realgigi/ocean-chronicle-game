@@ -4522,6 +4522,46 @@ button:disabled {
     drop-shadow(0 0 15px rgba(255, 226, 109, 0.28));
 }
 
+.breakthrough-player::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  width: 28%;
+  height: 28%;
+  border-radius: 50% 50% 46% 46%;
+  background:
+    radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.96), transparent 22%),
+    linear-gradient(135deg, rgba(255, 232, 112, 0.94), rgba(105, 236, 246, 0.86));
+  box-shadow:
+    0 0 0 1px rgba(255, 246, 174, 0.38),
+    0 0 13px rgba(112, 235, 255, 0.62);
+  pointer-events: none;
+}
+
+.breakthrough-player.dir-up::after {
+  top: -4%;
+  left: 50%;
+  transform: translateX(-50%) scaleY(0.72);
+}
+
+.breakthrough-player.dir-down::after {
+  left: 50%;
+  bottom: -7%;
+  transform: translateX(-50%) scaleY(0.72);
+}
+
+.breakthrough-player.dir-left::after {
+  left: -7%;
+  top: 50%;
+  transform: translateY(-50%) scaleX(0.72);
+}
+
+.breakthrough-player.dir-right::after {
+  right: -7%;
+  top: 50%;
+  transform: translateY(-50%) scaleX(0.72);
+}
+
 .breakthrough-player.poisoned img {
   opacity: 0.78;
   filter: grayscale(0.42) saturate(0.66);
@@ -4534,6 +4574,45 @@ button:disabled {
   width: 132%;
   height: 132%;
   object-fit: contain;
+  transform-origin: 50% 62%;
+  transition:
+    transform 110ms ease-out,
+    filter 110ms ease-out,
+    opacity 110ms ease-out;
+}
+
+.breakthrough-player.dir-down img {
+  transform: translateY(2%) scale(1.04);
+}
+
+.breakthrough-player.dir-up img {
+  opacity: 0.9;
+  transform: translateY(-7%) scale(0.92);
+  filter:
+    saturate(0.92)
+    brightness(0.9)
+    drop-shadow(0 -6px 8px rgba(101, 232, 255, 0.18));
+}
+
+.breakthrough-player.dir-left img {
+  transform: translateX(-5%) rotate(-8deg) scaleX(-0.88) scaleY(0.98);
+}
+
+.breakthrough-player.dir-right img {
+  transform: translateX(5%) rotate(8deg) scaleX(0.88) scaleY(0.98);
+}
+
+.breakthrough-player.dir-up::before {
+  background:
+    radial-gradient(circle at 50% 18%, rgba(103, 226, 244, 0.22), transparent 34%),
+    radial-gradient(circle, rgba(245, 255, 255, 0.26), rgba(83, 213, 225, 0.15) 58%, transparent 72%);
+}
+
+.breakthrough-player.dir-left,
+.breakthrough-player.dir-right {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(245, 255, 255, 0.4), rgba(83, 213, 225, 0.16) 54%, transparent 72%),
+    linear-gradient(90deg, rgba(255, 225, 112, 0.08), transparent);
 }
 
 .breakthrough-player.panther img {
