@@ -373,6 +373,7 @@ type TowerMonster = {
 type CityDirection = 'up' | 'down' | 'left' | 'right';
 type CityTileKind = 'coral' | 'stone' | 'seaweed' | 'current' | 'vent' | 'crystal' | 'trench' | 'rubble';
 type CityChargeStage = 0 | 1 | 2;
+type CityEnemyKind = 'tank' | 'anemone' | 'urchin';
 type CityTile = {
   id: number;
   kind: CityTileKind;
@@ -383,14 +384,17 @@ type CityTile = {
 };
 type CityUnit = {
   id: number;
+  kind: CityEnemyKind;
   x: number;
   y: number;
   dir: CityDirection;
   hp: number;
+  maxHp: number;
   cooldown: number;
   turnTimer: number;
   moveTimer: number;
   stepDelay: number;
+  poisonTimer?: number;
 };
 type CityShot = {
   id: number;
@@ -410,6 +414,12 @@ type CityPowerupKind = 'speed' | 'shield' | 'armor' | 'fortify' | 'freeze' | 'bl
 type CityPowerup = {
   id: number;
   kind: CityPowerupKind;
+  x: number;
+  y: number;
+  expiresAt: number;
+};
+type CityPoisonCloud = {
+  id: number;
   x: number;
   y: number;
   expiresAt: number;
@@ -661,8 +671,15 @@ const assets = {
       left: assetUrl('/assets/mobile/city-units/mecha-squid-tank-left-v01.webp?v=20260531'),
       right: assetUrl('/assets/mobile/city-units/mecha-squid-tank-right-v01.webp?v=20260531'),
     },
+    urchin: {
+      up: assetUrl('/assets/mobile/city-units/virus-urchin-up-v01.png?v=20260605'),
+      down: assetUrl('/assets/mobile/city-units/virus-urchin-down-v01.png?v=20260605'),
+      left: assetUrl('/assets/mobile/city-units/virus-urchin-left-v01.png?v=20260605'),
+      right: assetUrl('/assets/mobile/city-units/virus-urchin-right-v01.png?v=20260605'),
+    },
+    anemone: assetUrl('/assets/mobile/city-units/garbage-anemone-turret-v01.png?v=20260605'),
     base: assetUrl('/assets/mobile/city-units/ice-crystal-base-v01.webp?v=20260531'),
-  } satisfies { player: Record<CityDirection, string>; enemy: Record<CityDirection, string>; base: string },
+  } satisfies { player: Record<CityDirection, string>; enemy: Record<CityDirection, string>; urchin: Record<CityDirection, string>; anemone: string; base: string },
   stageBg: assetUrl('/assets/mobile/stages/north-battlefield-bg-v01.webp'),
   bossStates: {
     idle: assetUrl('/assets/mobile/bosses/giant-garbage-anemone-idle-v01.webp'),
@@ -1088,6 +1105,9 @@ const cityTurnRetryMs = 42;
 const cityTurnBufferMs = 54;
 const cityChargeStageOneMs = 650;
 const cityChargeStageTwoMs = 1350;
+const cityPoisonCloudSize = cityCellSize * 4;
+const cityPoisonSlowScale = 0.7;
+const cityPoisonDurationMs = 5200;
 const cityStartingBaseHp = 4;
 const cityStartingArmor = 4;
 const cityMaxHp = 5;
@@ -1553,6 +1573,12 @@ function cityShotUnitHitRadius(shot: CityShot) {
   return cityUnitSize * (shot.chargeStage ? 0.98 : 0.62);
 }
 
+function cityDirectionToward(from: { x: number; y: number }, to: { x: number; y: number }): CityDirection {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
+}
+
 function cityCellCenter(index: number) {
   return (index + 0.5) * cityCellSize;
 }
@@ -1773,28 +1799,85 @@ function createCityTiles(): CityTile[] {
   return tiles;
 }
 
-function createCityEnemy(id: number, tiles: CityTile[], occupants: Pick<CityUnit, 'x' | 'y'>[], config = cityLevelConfig(1)): CityUnit | null {
-  const spawns = cityEnemySpawnCells
-    .map((spawn) => ({ x: cityCellCenter(spawn.col), y: cityCellCenter(spawn.row), dir: spawn.dir }))
-    .filter((spawn) => cityCanOccupy(spawn.x, spawn.y, tiles, occupants));
-  if (!spawns.length) return null;
-  const spawn = spawns[Math.floor(Math.random() * spawns.length)];
+function cityRandomEnemySpawn(tiles: CityTile[], occupants: Pick<CityUnit, 'x' | 'y'>[], topHalf = false) {
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    const col = randomInt(2, cityGridSize - 3);
+    const row = topHalf ? randomInt(3, 22) : randomInt(3, 26);
+    const x = cityCellCenter(col);
+    const y = cityCellCenter(row);
+    if (Math.hypot(x - cityPlayerStart.x, y - cityPlayerStart.y) < cityCellSize * 6) continue;
+    if (Math.hypot(x - cityBase.x, y - cityBase.y) < cityCellSize * 6) continue;
+    if (cityCanOccupy(x, y, tiles, occupants)) {
+      return { x, y, dir: (['up', 'down', 'left', 'right'] as CityDirection[])[Math.floor(Math.random() * 4)] };
+    }
+  }
+  return null;
+}
+
+function chooseCityEnemyKind(config: CityLevelConfig, enemies: CityUnit[]): CityEnemyKind {
+  const urchins = enemies.filter((enemy) => enemy.kind === 'urchin').length;
+  const anemones = enemies.filter((enemy) => enemy.kind === 'anemone').length;
+  const urchinCap = config.level >= 3 ? 2 : 1;
+  const anemoneCap = config.level >= 3 ? 3 : config.level >= 2 ? 2 : 1;
+  const choices: { kind: CityEnemyKind; weight: number }[] = [{ kind: 'tank', weight: 100 }];
+  if (anemones < anemoneCap) choices.push({ kind: 'anemone', weight: config.level >= 2 ? 26 : 18 });
+  if (urchins < urchinCap) choices.push({ kind: 'urchin', weight: config.level >= 3 ? 10 : 6 });
+  const total = choices.reduce((sum, choice) => sum + choice.weight, 0);
+  let roll = Math.random() * total;
+  for (const choice of choices) {
+    roll -= choice.weight;
+    if (roll <= 0) return choice.kind;
+  }
+  return 'tank';
+}
+
+function cityEnemySpawnForKind(kind: CityEnemyKind, tiles: CityTile[], occupants: Pick<CityUnit, 'x' | 'y'>[]) {
+  if (kind === 'tank') {
+    const spawns = cityEnemySpawnCells
+      .map((spawn) => ({ x: cityCellCenter(spawn.col), y: cityCellCenter(spawn.row), dir: spawn.dir }))
+      .filter((spawn) => cityCanOccupy(spawn.x, spawn.y, tiles, occupants));
+    if (!spawns.length) return null;
+    return spawns[Math.floor(Math.random() * spawns.length)];
+  }
+  return cityRandomEnemySpawn(tiles, occupants, kind === 'anemone');
+}
+
+function createCityEnemy(id: number, tiles: CityTile[], occupants: Pick<CityUnit, 'x' | 'y'>[], config = cityLevelConfig(1), enemies: CityUnit[] = []): CityUnit | null {
+  const kind = chooseCityEnemyKind(config, enemies);
+  const spawn = cityEnemySpawnForKind(kind, tiles, occupants);
+  if (!spawn) return null;
+  const elite = Math.random() < config.eliteChance;
+  const maxHp = kind === 'anemone' ? 3 : kind === 'urchin' ? 2 : elite ? 2 : 1;
   return {
     id,
+    kind,
     x: spawn.x,
     y: spawn.y,
     dir: spawn.dir,
-    hp: Math.random() < config.eliteChance ? 2 : 1,
-    cooldown: (1450 + Math.random() * 950) * config.enemyShotDelayScale,
-    turnTimer: (760 + Math.random() * 1000) * config.enemyMoveDelayScale,
-    moveTimer: (500 + Math.random() * 480) * config.enemyMoveDelayScale,
-    stepDelay: (720 + Math.random() * 260) * config.enemyMoveDelayScale,
+    hp: maxHp,
+    maxHp,
+    cooldown: (kind === 'anemone' ? 1050 + Math.random() * 700 : 1450 + Math.random() * 950) * config.enemyShotDelayScale,
+    turnTimer: (kind === 'urchin' ? 540 + Math.random() * 740 : 760 + Math.random() * 1000) * config.enemyMoveDelayScale,
+    moveTimer: (kind === 'anemone' ? Number.POSITIVE_INFINITY : 500 + Math.random() * 480) * config.enemyMoveDelayScale,
+    stepDelay: (kind === 'urchin' ? 760 + Math.random() * 220 : 720 + Math.random() * 260) * config.enemyMoveDelayScale,
+    poisonTimer: kind === 'urchin' ? 950 + Math.random() * 1100 : undefined,
   };
 }
 
 function cityIntersectsRect(x: number, y: number, size: number, rect: { x: number; y: number; size: number }) {
   const half = size / 2;
   return x + half > rect.x && x - half < rect.x + rect.size && y + half > rect.y && y - half < rect.y + rect.size;
+}
+
+function cityInsidePoisonCloud(x: number, y: number, clouds: CityPoisonCloud[], time: number) {
+  return clouds.some((cloud) => (
+    cloud.expiresAt > time &&
+    cityIntersectsRect(x, y, cityUnitSize * 0.82, {
+      x: cloud.x - cityPoisonCloudSize / 2,
+      y: cloud.y - cityPoisonCloudSize / 2,
+      size: cityPoisonCloudSize,
+    })
+  ));
 }
 
 function cityTileBlocks(tile: CityTile) {
@@ -5051,6 +5134,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
   const visualEnemiesRef = useRef<CityUnit[]>([]);
   const shotsRef = useRef<CityShot[]>([]);
   const powerupsRef = useRef<CityPowerup[]>([]);
+  const poisonCloudsRef = useRef<CityPoisonCloud[]>([]);
   const keysRef = useRef({ fire: false });
   const firePointerRef = useRef<number | null>(null);
   const fireChargeStartedAtRef = useRef<number | null>(null);
@@ -5070,6 +5154,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
   const [camera, setCamera] = useState(() => cityCameraForPosition(cityPlayerStart.x, cityPlayerStart.y));
   const [shots, setShots] = useState<CityShot[]>([]);
   const [powerups, setPowerups] = useState<CityPowerup[]>([]);
+  const [poisonClouds, setPoisonClouds] = useState<CityPoisonCloud[]>([]);
   const [baseHp, setBaseHp] = useState(cityStartingBaseHp);
   const [armor, setArmor] = useState(cityStartingArmor);
   const [kills, setKills] = useState(0);
@@ -5189,6 +5274,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
     visualEnemiesRef.current = [];
     shotsRef.current = [];
     powerupsRef.current = [];
+    poisonCloudsRef.current = [];
     keysRef.current = { fire: false };
     firePointerRef.current = null;
     fireChargeStartedAtRef.current = null;
@@ -5212,6 +5298,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
     setCamera(nextCamera);
     setShots([]);
     setPowerups([]);
+    setPoisonClouds([]);
     setBaseHp(cityStartingBaseHp);
     setArmor(cityStartingArmor);
     setKills(0);
@@ -5324,11 +5411,12 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
     if (intent.secondary && !sameIntent) {
       diagonalAxisRef.current = 'horizontal';
     }
+    const playerPace = cityInsidePoisonCloud(playerRef.current.x, playerRef.current.y, poisonCloudsRef.current, startTime) ? cityPoisonSlowScale : 1;
     if (!wasHolding) {
       const moved = movePlayerIntent(intent);
       nextPlayerStepAt.current = gridNextStepAt(startTime, moved, {
-        stepMs: dashUntilRef.current > startTime ? 118 : cityPlayerStepDelayMs,
-        retryMs: cityTurnRetryMs,
+        stepMs: (dashUntilRef.current > startTime ? 118 : cityPlayerStepDelayMs) / playerPace,
+        retryMs: cityTurnRetryMs / playerPace,
         turnBufferMs: cityTurnBufferMs,
       });
     } else if (!sameIntent) {
@@ -5480,18 +5568,20 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
       if (statusRef.current === 'playing') {
         const cityConfig = cityLevelConfig(cityLevelRef.current);
         const dashActive = dashUntilRef.current > time;
+        const playerPoisoned = cityInsidePoisonCloud(playerRef.current.x, playerRef.current.y, poisonCloudsRef.current, time);
+        const playerPace = playerPoisoned ? cityPoisonSlowScale : 1;
         const heldIntent = heldDirectionRef.current;
         if (heldIntent && time >= nextPlayerStepAt.current) {
           const moved = movePlayerIntent(heldIntent);
           nextPlayerStepAt.current = gridNextStepAt(time, moved, {
-            stepMs: dashActive ? 118 : cityPlayerStepDelayMs,
-            retryMs: cityTurnRetryMs,
+            stepMs: (dashActive ? 118 : cityPlayerStepDelayMs) / playerPace,
+            retryMs: cityTurnRetryMs / playerPace,
             turnBufferMs: cityTurnBufferMs,
           });
         }
         const currentTiles = tilesRef.current;
         const currentPlayer = { ...playerRef.current };
-        currentPlayer.cooldown -= dt;
+        currentPlayer.cooldown -= dt * playerPace;
         const rapid = rapidUntilRef.current > time;
         const piercing = pierceUntilRef.current > time;
         const spread = spreadUntilRef.current > time;
@@ -5551,7 +5641,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
         let nextEnemies = enemiesRef.current.map((enemy) => ({ ...enemy }));
         if (spawnTimer.current >= cityConfig.spawnMs && nextEnemies.length < cityConfig.enemyCap && killsRef.current + nextEnemies.length < cityConfig.targetKills) {
           spawnTimer.current = 0;
-          const spawned = createCityEnemy(nextId.current++, currentTiles, [currentPlayer, ...nextEnemies], cityConfig);
+          const spawned = createCityEnemy(nextId.current++, currentTiles, [currentPlayer, ...nextEnemies], cityConfig, nextEnemies);
           if (spawned) {
             nextEnemies.push(spawned);
           }
@@ -5562,21 +5652,38 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
         const enemyPace = frozen ? 0.42 : 1;
         const enemyShots: CityShot[] = [];
         const movedEnemies: CityUnit[] = [];
+        let nextPoisonClouds = poisonCloudsRef.current.filter((cloud) => cloud.expiresAt > time);
         nextEnemies = nextEnemies.map((enemy) => {
           const nextEnemy = { ...enemy };
-          nextEnemy.turnTimer -= dt * (jammed ? 0.65 : enemyPace);
-          nextEnemy.moveTimer -= dt * enemyPace;
-          const toBaseX = cityBase.x - nextEnemy.x;
-          const toBaseY = cityBase.y - nextEnemy.y;
+          const activeEnemyPace = nextEnemy.kind === 'anemone' ? 1 : enemyPace;
+          nextEnemy.turnTimer -= dt * (jammed ? 0.65 : activeEnemyPace);
+          if (nextEnemy.kind !== 'anemone') nextEnemy.moveTimer -= dt * activeEnemyPace;
           if (nextEnemy.turnTimer <= 0) {
-            nextEnemy.turnTimer = (900 + Math.random() * 1200) * cityConfig.enemyMoveDelayScale;
-            if (Math.random() < 0.7) {
-              nextEnemy.dir = Math.abs(toBaseX) > Math.abs(toBaseY) ? (toBaseX > 0 ? 'right' : 'left') : toBaseY > 0 ? 'down' : 'up';
+            nextEnemy.turnTimer = (nextEnemy.kind === 'urchin' ? 600 + Math.random() * 900 : 900 + Math.random() * 1200) * cityConfig.enemyMoveDelayScale;
+            if (nextEnemy.kind === 'urchin') {
+              nextEnemy.dir = (['up', 'down', 'left', 'right'] as CityDirection[])[Math.floor(Math.random() * 4)];
+            } else if (Math.random() < 0.72) {
+              nextEnemy.dir = cityDirectionToward(nextEnemy, Math.random() < 0.58 ? cityBase : currentPlayer);
             } else {
               nextEnemy.dir = (['up', 'down', 'left', 'right'] as CityDirection[])[Math.floor(Math.random() * 4)];
             }
           }
-          if (nextEnemy.moveTimer <= 0) {
+          if (nextEnemy.kind === 'urchin') {
+            nextEnemy.poisonTimer = (nextEnemy.poisonTimer ?? 0) - dt * activeEnemyPace;
+            if (!jammed && nextEnemy.poisonTimer <= 0) {
+              nextPoisonClouds = [
+                ...nextPoisonClouds,
+                {
+                  id: nextId.current++,
+                  x: nextEnemy.x,
+                  y: nextEnemy.y,
+                  expiresAt: time + cityPoisonDurationMs,
+                },
+              ].slice(-6);
+              nextEnemy.poisonTimer = 4700 + Math.random() * 2100;
+            }
+          }
+          if (nextEnemy.kind !== 'anemone' && nextEnemy.moveTimer <= 0) {
             const nextStep = cityStepPosition(nextEnemy, nextEnemy.dir);
             const blockers = [
               currentPlayer,
@@ -5587,16 +5694,15 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
               nextEnemy.x = nextStep.x;
               nextEnemy.y = nextStep.y;
             } else {
-              nextEnemy.dir = Math.abs(toBaseX) > Math.abs(toBaseY) ? (toBaseY > 0 ? 'down' : 'up') : toBaseX > 0 ? 'right' : 'left';
+              nextEnemy.dir = nextEnemy.kind === 'urchin'
+                ? (['up', 'down', 'left', 'right'] as CityDirection[])[Math.floor(Math.random() * 4)]
+                : cityDirectionToward(nextEnemy, cityBase);
             }
             nextEnemy.moveTimer = nextEnemy.stepDelay * cityTerrainSpeed(nextEnemy.x, nextEnemy.y, currentTiles);
           }
           nextEnemy.cooldown -= jammed ? 0 : dt * enemyPace;
-          if (!jammed && nextEnemy.cooldown <= 0) {
-            const aimAtBase = Math.random() < 0.62;
-            if (aimAtBase) {
-              nextEnemy.dir = Math.abs(toBaseX) > Math.abs(toBaseY) ? (toBaseX > 0 ? 'right' : 'left') : toBaseY > 0 ? 'down' : 'up';
-            }
+          if (!jammed && nextEnemy.kind !== 'urchin' && nextEnemy.cooldown <= 0) {
+            nextEnemy.dir = cityDirectionToward(nextEnemy, Math.random() < (nextEnemy.kind === 'anemone' ? 0.64 : 0.58) ? currentPlayer : cityBase);
             const vector = cityDirectionVector(nextEnemy.dir);
             enemyShots.push({
               id: nextId.current++,
@@ -5607,7 +5713,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
               vy: vector.y * cityConfig.enemyShotSpeed,
               dir: nextEnemy.dir,
             });
-            nextEnemy.cooldown = (1900 + Math.random() * 1100) * cityConfig.enemyShotDelayScale;
+            nextEnemy.cooldown = (nextEnemy.kind === 'anemone' ? 1550 + Math.random() * 950 : 1900 + Math.random() * 1100) * cityConfig.enemyShotDelayScale;
           }
           movedEnemies.push(nextEnemy);
           return nextEnemy;
@@ -5774,6 +5880,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
         enemiesRef.current = nextEnemies;
         shotsRef.current = nextShots.slice(-36);
         powerupsRef.current = nextPowerups;
+        poisonCloudsRef.current = nextPoisonClouds;
         armorRef.current = nextArmor;
         baseHpRef.current = nextBaseHp;
         killsRef.current = nextKills;
@@ -5793,6 +5900,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
         setVisualEnemies(nextVisualEnemies);
         setShots(shotsRef.current);
         setPowerups(nextPowerups);
+        setPoisonClouds(nextPoisonClouds);
         setArmor(nextArmor);
         setBaseHp(nextBaseHp);
         setKills(nextKills);
@@ -5865,6 +5973,7 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
   const dashActive = dashUntil > cityRenderTime;
   const enemiesFrozen = freezeUntil > cityRenderTime;
   const enemiesJammed = jamUntil > cityRenderTime;
+  const playerPoisonedNow = cityInsidePoisonCloud(visualPlayer.x, visualPlayer.y, poisonClouds, cityRenderTime);
   const chargeLabel = chargeStage === 2 ? '二段' : chargeStage === 1 ? '一段' : chargeStage === 0 ? '集氣' : '攻擊';
   const cityPadStickStyle: CSSProperties = {
     ['--pad-x' as string]: `${padVector.x}px`,
@@ -5921,13 +6030,25 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
                 <span>{cityPowerupLabels[powerup.kind]}</span>
               </div>
             ))}
+            {poisonClouds.map((cloud) => (
+              <span
+                className="city-poison-cloud"
+                key={cloud.id}
+                style={{
+                  left: `${cloud.x}%`,
+                  top: `${cloud.y}%`,
+                  width: `${cityPoisonCloudSize}%`,
+                  height: `${cityPoisonCloudSize}%`,
+                }}
+              />
+            ))}
             {visualEnemies.map((enemy) => (
-              <div className={`city-unit enemy dir-${enemy.dir} ${citySeaweedCover(enemy.x, enemy.y, tiles) ? 'hidden' : ''} ${enemiesFrozen ? 'frozen' : ''} ${enemiesJammed ? 'jammed' : ''}`} key={enemy.id} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }}>
-                <img src={assets.cityUnits.enemy[enemy.dir]} alt="" />
-                <i style={{ width: `${enemy.hp * 50}%` }} />
+              <div className={`city-unit enemy ${enemy.kind} dir-${enemy.dir} ${citySeaweedCover(enemy.x, enemy.y, tiles) ? 'hidden' : ''} ${enemiesFrozen ? 'frozen' : ''} ${enemiesJammed ? 'jammed' : ''}`} key={enemy.id} style={{ left: `${enemy.x}%`, top: `${enemy.y}%` }}>
+                <img src={enemy.kind === 'anemone' ? assets.cityUnits.anemone : enemy.kind === 'urchin' ? assets.cityUnits.urchin[enemy.dir] : assets.cityUnits.enemy[enemy.dir]} alt="" />
+                <i style={{ width: `${clamp(enemy.hp / enemy.maxHp, 0, 1) * 100}%` }} />
               </div>
             ))}
-            <div className={`city-unit player dir-${visualPlayer.dir} ${playerHidden ? 'hidden' : ''} ${shielded ? 'shielded' : ''} ${rapid ? 'rapid' : ''} ${piercing ? 'piercing' : ''} ${spreadActive ? 'spread' : ''} ${doubleActive ? 'double' : ''} ${magnetActive ? 'magnet' : ''} ${dashActive ? 'dash' : ''} ${chargeStage >= 0 ? `charging charge-${chargeStage}` : ''}`} style={{ left: `${visualPlayer.x}%`, top: `${visualPlayer.y}%` }}>
+            <div className={`city-unit player dir-${visualPlayer.dir} ${playerHidden ? 'hidden' : ''} ${shielded ? 'shielded' : ''} ${playerPoisonedNow ? 'poisoned' : ''} ${rapid ? 'rapid' : ''} ${piercing ? 'piercing' : ''} ${spreadActive ? 'spread' : ''} ${doubleActive ? 'double' : ''} ${magnetActive ? 'magnet' : ''} ${dashActive ? 'dash' : ''} ${chargeStage >= 0 ? `charging charge-${chargeStage}` : ''}`} style={{ left: `${visualPlayer.x}%`, top: `${visualPlayer.y}%` }}>
               <img src={assets.cityUnits.player[visualPlayer.dir]} alt="" />
             </div>
             {shots.map((shot) => (
