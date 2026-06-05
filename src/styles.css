@@ -718,6 +718,10 @@ button:disabled {
   background: linear-gradient(135deg, rgba(38, 100, 113, 0.92), rgba(109, 63, 132, 0.86));
 }
 
+.map-node.breakthrough {
+  background: linear-gradient(135deg, rgba(42, 152, 150, 0.92), rgba(67, 43, 124, 0.9));
+}
+
 .map-node.lightbomb {
   background: linear-gradient(135deg, rgba(47, 146, 139, 0.92), rgba(190, 126, 48, 0.86));
 }
@@ -4297,6 +4301,365 @@ button:disabled {
   50% {
     filter: drop-shadow(0 0 22px rgba(255, 92, 139, 0.78));
   }
+}
+
+.breakthrough-screen {
+  width: 100%;
+  max-width: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  background:
+    radial-gradient(circle at 52% 0%, rgba(114, 237, 226, 0.22), transparent 30%),
+    radial-gradient(circle at 18% 82%, rgba(210, 152, 77, 0.16), transparent 25%),
+    linear-gradient(180deg, #061827 0%, #0a2f39 48%, #07111e 100%);
+}
+
+.breakthrough-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg, rgba(216, 247, 255, 0.035) 0 1px, transparent 1px 46px),
+    repeating-linear-gradient(0deg, rgba(216, 247, 255, 0.026) 0 1px, transparent 1px 46px);
+}
+
+.breakthrough-select-screen {
+  place-items: center;
+  padding: 56px 14px 18px;
+}
+
+.breakthrough-select {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 420px);
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 12px;
+}
+
+.breakthrough-select > strong {
+  color: #e8fbff;
+  font-size: 1.5rem;
+  font-weight: 950;
+  text-align: center;
+  text-shadow: 0 0 18px rgba(117, 240, 255, 0.36);
+}
+
+.breakthrough-roster {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.breakthrough-card {
+  min-height: 132px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  place-items: center;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(126, 244, 255, 0.18), transparent 42%),
+    rgba(5, 24, 40, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(178, 232, 244, 0.18);
+}
+
+.breakthrough-card.selected {
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 229, 117, 0.62),
+    0 0 24px rgba(117, 240, 255, 0.22);
+}
+
+.breakthrough-card img {
+  width: min(92px, 72%);
+  height: 82px;
+  object-fit: contain;
+  filter: drop-shadow(0 9px 14px rgba(0, 0, 0, 0.32));
+}
+
+.breakthrough-card span,
+.breakthrough-selected span {
+  color: #f5fbff;
+  font-size: 0.9rem;
+  font-weight: 950;
+  text-align: center;
+}
+
+.breakthrough-card small,
+.breakthrough-selected small {
+  color: #aeeaf4;
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-align: center;
+}
+
+.breakthrough-selected {
+  min-height: 78px;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(5, 22, 37, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(178, 232, 244, 0.18);
+}
+
+.breakthrough-selected img {
+  grid-row: 1 / 3;
+  width: 72px;
+  height: 62px;
+  object-fit: contain;
+}
+
+.breakthrough-arena {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.breakthrough-viewport {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background:
+    radial-gradient(circle at 42% 12%, rgba(255, 231, 121, 0.08), transparent 18%),
+    linear-gradient(180deg, rgba(13, 67, 82, 0.92), rgba(3, 18, 31, 0.98));
+  box-shadow:
+    inset 0 0 0 1px rgba(166, 232, 244, 0.2),
+    inset 0 0 34px rgba(76, 226, 230, 0.08);
+}
+
+.breakthrough-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background:
+    radial-gradient(circle at 16% 16%, rgba(255, 226, 109, 0.08), transparent 16%),
+    radial-gradient(circle at 82% 54%, rgba(178, 103, 255, 0.08), transparent 20%),
+    linear-gradient(180deg, rgba(14, 81, 93, 0.28), rgba(5, 22, 37, 0.4)),
+    repeating-linear-gradient(90deg, rgba(203, 247, 255, 0.07) 0 1px, transparent 1px var(--breakthrough-cell-px)),
+    repeating-linear-gradient(0deg, rgba(203, 247, 255, 0.055) 0 1px, transparent 1px var(--breakthrough-cell-px));
+  will-change: transform;
+}
+
+.breakthrough-tile,
+.breakthrough-goal,
+.breakthrough-player,
+.breakthrough-enemy,
+.breakthrough-shot,
+.breakthrough-poison {
+  position: absolute;
+}
+
+.breakthrough-tile {
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(205, 244, 250, 0.14);
+}
+
+.breakthrough-tile.coral {
+  background:
+    radial-gradient(circle at 35% 24%, rgba(255, 255, 255, 0.26), transparent 28%),
+    linear-gradient(135deg, rgba(54, 178, 188, 0.88), rgba(21, 89, 115, 0.9));
+}
+
+.breakthrough-tile.crystal {
+  background:
+    radial-gradient(circle at 35% 26%, rgba(255, 255, 255, 0.42), transparent 26%),
+    linear-gradient(135deg, rgba(130, 235, 255, 0.92), rgba(131, 91, 215, 0.9));
+}
+
+.breakthrough-tile.stone {
+  background: linear-gradient(135deg, rgba(70, 93, 106, 0.96), rgba(24, 40, 55, 0.96));
+}
+
+.breakthrough-tile.rubble {
+  opacity: 0.58;
+  background:
+    radial-gradient(circle at 48% 54%, rgba(255, 232, 129, 0.18), transparent 36%),
+    rgba(23, 74, 83, 0.46);
+}
+
+.breakthrough-goal {
+  z-index: 5;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.9), rgba(116, 236, 247, 0.52) 32%, rgba(55, 90, 150, 0.26) 58%, transparent 72%);
+  box-shadow: 0 0 24px rgba(116, 236, 247, 0.54);
+}
+
+.breakthrough-goal.locked {
+  opacity: 0.22;
+  filter: grayscale(0.7);
+}
+
+.breakthrough-goal.open {
+  animation: cityPowerup 1s ease-in-out infinite;
+}
+
+.breakthrough-player,
+.breakthrough-enemy {
+  z-index: 12;
+  width: calc(var(--breakthrough-cell-px) * 1.12);
+  height: calc(var(--breakthrough-cell-px) * 1.12);
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  border-radius: 50%;
+}
+
+.breakthrough-player {
+  background: radial-gradient(circle, rgba(245, 255, 255, 0.46), rgba(83, 213, 225, 0.18) 58%, transparent 72%);
+  filter:
+    drop-shadow(0 9px 13px rgba(0, 0, 0, 0.34))
+    drop-shadow(0 0 15px rgba(255, 226, 109, 0.28));
+}
+
+.breakthrough-player.poisoned img {
+  opacity: 0.78;
+  filter: grayscale(0.42) saturate(0.66);
+}
+
+.breakthrough-player img,
+.breakthrough-enemy img {
+  width: 132%;
+  height: 132%;
+  object-fit: contain;
+}
+
+.breakthrough-player.panther img {
+  width: 124%;
+  height: 124%;
+}
+
+.breakthrough-player.panda img {
+  width: 138%;
+  height: 138%;
+}
+
+.breakthrough-player.weapon-rapid,
+.breakthrough-player.weapon-pierce,
+.breakthrough-player.weapon-spread,
+.breakthrough-player.weapon-double {
+  box-shadow:
+    0 0 0 2px rgba(255, 230, 120, 0.24),
+    0 0 22px rgba(117, 240, 255, 0.28);
+}
+
+.breakthrough-enemy {
+  background: radial-gradient(circle, rgba(245, 226, 255, 0.48), rgba(104, 52, 132, 0.22) 58%, transparent 72%);
+  filter:
+    drop-shadow(0 9px 13px rgba(0, 0, 0, 0.34))
+    drop-shadow(0 0 14px rgba(235, 139, 255, 0.32));
+}
+
+.breakthrough-enemy.boss {
+  width: calc(var(--breakthrough-cell-px) * 1.84);
+  height: calc(var(--breakthrough-cell-px) * 1.84);
+  filter:
+    drop-shadow(0 12px 18px rgba(0, 0, 0, 0.42))
+    drop-shadow(0 0 24px rgba(111, 234, 243, 0.44));
+}
+
+.breakthrough-enemy.urchin {
+  width: calc(var(--breakthrough-cell-px) * 1.22);
+  height: calc(var(--breakthrough-cell-px) * 1.22);
+}
+
+.breakthrough-enemy i {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: -4px;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ff7ca8, #ffe79c);
+  box-shadow: 0 0 8px rgba(255, 159, 203, 0.42);
+}
+
+.breakthrough-shot {
+  z-index: 15;
+  width: calc(var(--breakthrough-cell-px) * 0.36);
+  height: calc(var(--breakthrough-cell-px) * 0.36);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background:
+    radial-gradient(circle at 34% 28%, #fff 0 18%, #ffe585 19% 45%, rgba(81, 224, 236, 0.78) 46% 72%, transparent 73%);
+  box-shadow: 0 0 10px rgba(111, 234, 243, 0.72);
+}
+
+.breakthrough-shot.enemy {
+  background:
+    radial-gradient(circle at 34% 28%, #fff 0 16%, #f2a1ff 17% 45%, rgba(93, 57, 178, 0.78) 46% 72%, transparent 73%);
+  box-shadow: 0 0 10px rgba(210, 94, 255, 0.72);
+}
+
+.breakthrough-shot.big {
+  width: calc(var(--breakthrough-cell-px) * 0.54);
+  height: calc(var(--breakthrough-cell-px) * 0.54);
+}
+
+.breakthrough-shot.piercing {
+  border-radius: 40% 60% 52% 48%;
+  background:
+    radial-gradient(circle at 30% 26%, #fff 0 14%, #fff0a8 15% 34%, rgba(157, 101, 255, 0.86) 35% 72%, transparent 73%);
+}
+
+.breakthrough-poison {
+  z-index: 6;
+  border-radius: 20%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 36% 32%, rgba(218, 218, 226, 0.24), transparent 28%),
+    radial-gradient(circle at 66% 62%, rgba(151, 105, 183, 0.3), transparent 34%),
+    radial-gradient(circle, rgba(118, 113, 132, 0.36), rgba(58, 49, 72, 0.24) 58%, transparent 76%);
+  animation: cityPoisonMist 1.55s ease-in-out infinite alternate;
+}
+
+.breakthrough-powerup {
+  transform: translate(-50%, -50%);
+}
+
+.breakthrough-hud {
+  position: absolute;
+  z-index: 20;
+  top: 8px;
+  left: 52px;
+  right: 52px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  pointer-events: none;
+}
+
+.breakthrough-hud span {
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 4px 5px;
+  border-radius: 8px;
+  background: rgba(4, 18, 30, 0.72);
+  color: #dcf8ff;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px rgba(181, 235, 243, 0.18);
+}
+
+.breakthrough-fire-control {
+  right: max(12px, calc(env(safe-area-inset-right) + 8px));
+  bottom: max(12px, calc(env(safe-area-inset-bottom) + 8px));
 }
 
 .lightbomb-screen {

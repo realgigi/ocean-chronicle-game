@@ -6,7 +6,7 @@ function assetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
 }
 
-type Screen = 'title' | 'map' | 'gallery' | 'video' | 'combat' | 'victory' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city' | 'lightbomb' | 'revelation';
+type Screen = 'title' | 'map' | 'gallery' | 'video' | 'combat' | 'victory' | 'memory' | 'breakout' | 'minefield' | 'snowfield' | 'snake' | 'tower' | 'city' | 'breakthrough' | 'lightbomb' | 'revelation';
 type PlayableScene = Exclude<Screen, 'title' | 'map' | 'gallery' | 'video' | 'victory'>;
 type VideoBackTarget = 'title' | 'map';
 type GameProgressEntry = {
@@ -46,6 +46,7 @@ const sceneDisplayNames: Record<PlayableScene, string> = {
   snake: '海潮部落',
   tower: '深淵高塔',
   city: '海底城市',
+  breakthrough: '海底突圍',
   lightbomb: '海光迷宮',
   revelation: '王國冰晶',
 };
@@ -58,6 +59,7 @@ const sceneShortHints: Record<PlayableScene, string> = {
   snake: '貪食蛇',
   tower: '下樓梯',
   city: '坦克大戰',
+  breakthrough: '突圍射擊',
   lightbomb: '炸彈人',
   revelation: '天蠶變',
 };
@@ -70,6 +72,7 @@ const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
   snake: [1600, 2400, 3150],
   tower: [900, 1500, 2200],
   city: [2600, 3300, 4100],
+  breakthrough: [2400, 3300, 4300],
   lightbomb: [3200, 3900, 4700],
   revelation: [1600, 2300, 3000],
 };
@@ -540,6 +543,83 @@ type LightBombNotice = {
   kind: LightBombPowerupKind | 'door' | 'hit';
   text: string;
 } | null;
+type BreakthroughStatus = 'select' | 'playing' | 'won' | 'lost';
+type BreakthroughObstacleKind = 'coral' | 'stone' | 'crystal' | 'rubble';
+type BreakthroughObstacle = {
+  id: number;
+  row: number;
+  col: number;
+  kind: BreakthroughObstacleKind;
+  hp: number;
+};
+type BreakthroughEnemy = {
+  id: number;
+  kind: CityEnemyKind | 'boss';
+  row: number;
+  col: number;
+  x: number;
+  y: number;
+  dir: CityDirection;
+  hp: number;
+  maxHp: number;
+  cooldown: number;
+  moveAt: number;
+  poisonAt?: number;
+};
+type BreakthroughShot = {
+  id: number;
+  side: 'ally' | 'enemy';
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  dir: CityDirection;
+  damage: number;
+  piercing?: boolean;
+  big?: boolean;
+};
+type BreakthroughPowerup = {
+  id: number;
+  kind: CityPowerupKind;
+  row: number;
+  col: number;
+  x: number;
+  y: number;
+  expiresAt: number;
+};
+type BreakthroughPoisonCloud = {
+  id: number;
+  row: number;
+  col: number;
+  expiresAt: number;
+};
+type BreakthroughPlayer = {
+  character: LightBombCharacterId;
+  row: number;
+  col: number;
+  x: number;
+  y: number;
+  dir: CityDirection;
+  hp: number;
+  maxHp: number;
+  cooldown: number;
+};
+type BreakthroughCharacterStats = {
+  hp: number;
+  moveMs: number;
+  cooldownMs: number;
+  shotSpeed: number;
+  damage: number;
+  piercing?: boolean;
+  spread?: boolean;
+  double?: boolean;
+  big?: boolean;
+};
+type BreakthroughNotice = {
+  id: number;
+  kind: CityNoticeKind | 'win';
+  text: string;
+} | null;
 type RevelationCell = {
   row: number;
   col: number;
@@ -733,6 +813,20 @@ const lightBombCharacters: LightBombCharacterDef[] = [
 function lightBombCharacterDef(id: LightBombCharacterId) {
   return lightBombCharacters.find((character) => character.id === id) ?? lightBombCharacters[0];
 }
+
+const breakthroughCharacterStats: Record<LightBombCharacterId, BreakthroughCharacterStats> = {
+  prince: { hp: 4, moveMs: 150, cooldownMs: 520, shotSpeed: 0.014, damage: 1, piercing: true },
+  panther: { hp: 3, moveMs: 118, cooldownMs: 360, shotSpeed: 0.016, damage: 1 },
+  doubleBand: { hp: 4, moveMs: 148, cooldownMs: 560, shotSpeed: 0.014, damage: 1, spread: true, double: true },
+  panda: { hp: 6, moveMs: 190, cooldownMs: 720, shotSpeed: 0.012, damage: 2, big: true },
+};
+
+const breakthroughCharacterAbilityText: Record<LightBombCharacterId, string> = {
+  prince: '穿透海光炮',
+  panther: '高速連射',
+  doubleBand: '雙發散彈',
+  panda: '重裝震波',
+};
 
 function createLightBombPlayer(characterId: LightBombCharacterId, carry?: LightBombPlayer): LightBombPlayer {
   const character = lightBombCharacterDef(characterId);
@@ -1129,6 +1223,16 @@ const cityEnemySpawnCells = [
   { col: 1, row: 15, dir: 'right' as CityDirection },
   { col: 30, row: 15, dir: 'left' as CityDirection },
 ];
+const breakthroughCols = 11;
+const breakthroughRows = 60;
+const breakthroughViewCols = 9;
+const breakthroughViewRows = 15;
+const breakthroughStart = { row: breakthroughRows - 4, col: 5, dir: 'up' as CityDirection };
+const breakthroughBossStart = { row: 3, col: 5 };
+const breakthroughGoalRow = 1;
+const breakthroughCellSize = 100 / breakthroughCols;
+const breakthroughPoisonDurationMs = 5200;
+const breakthroughPowerupDurationMs = 12000;
 const cityPowerupWeights: { kind: CityPowerupKind; weight: number }[] = [
   { kind: 'speed', weight: 20 },
   { kind: 'shield', weight: 15 },
@@ -1994,6 +2098,145 @@ function citySmoothCamera(previous: { x: number; y: number }, target: { x: numbe
   };
 }
 
+function breakthroughKey(row: number, col: number) {
+  return `${row}-${col}`;
+}
+
+function breakthroughObstacleHp(kind: BreakthroughObstacleKind) {
+  if (kind === 'stone') return 999;
+  if (kind === 'crystal') return 3;
+  if (kind === 'coral') return 2;
+  return 1;
+}
+
+function breakthroughObstacleBlocks(obstacle?: BreakthroughObstacle) {
+  return Boolean(obstacle && obstacle.hp > 0);
+}
+
+function breakthroughObstacleBreaks(obstacle?: BreakthroughObstacle) {
+  return Boolean(obstacle && obstacle.kind !== 'stone');
+}
+
+function createBreakthroughObstacles(): BreakthroughObstacle[] {
+  const obstacles: BreakthroughObstacle[] = [];
+  const occupied = new Set<string>();
+  const add = (kind: BreakthroughObstacleKind, row: number, col: number) => {
+    if (row < 2 || row >= breakthroughRows - 2 || col < 0 || col >= breakthroughCols) return;
+    if (Math.abs(row - breakthroughStart.row) <= 3 && Math.abs(col - breakthroughStart.col) <= 3) return;
+    if (row <= 5 && Math.abs(col - breakthroughBossStart.col) <= 2) return;
+    const key = breakthroughKey(row, col);
+    if (occupied.has(key)) return;
+    occupied.add(key);
+    obstacles.push({ id: obstacles.length + 1, row, col, kind, hp: breakthroughObstacleHp(kind) });
+  };
+
+  for (let row = 6; row < breakthroughRows - 5; row += 1) {
+    const route = clamp(5 + Math.round(Math.sin(row * 0.38) * 2), 2, breakthroughCols - 3);
+    for (let col = 1; col < breakthroughCols - 1; col += 1) {
+      const nearRoute = Math.abs(col - route) <= 1;
+      const difficulty = 1 - row / breakthroughRows;
+      const roll = Math.random();
+      if (nearRoute && roll < 0.86) continue;
+      if (roll < 0.1 + difficulty * 0.12) add('stone', row, col);
+      else if (roll < 0.24 + difficulty * 0.15) add(Math.random() < 0.28 ? 'crystal' : 'coral', row, col);
+      else if (roll < 0.32) add('rubble', row, col);
+    }
+  }
+
+  for (let row = 10; row < breakthroughRows - 8; row += 8) {
+    const gap = randomInt(2, breakthroughCols - 3);
+    for (let col = 1; col < breakthroughCols - 1; col += 1) {
+      if (Math.abs(col - gap) <= 1) continue;
+      add(Math.random() < 0.7 ? 'coral' : 'crystal', row, col);
+    }
+  }
+
+  return obstacles;
+}
+
+function breakthroughObstacleAt(obstacles: BreakthroughObstacle[], row: number, col: number) {
+  return obstacles.find((obstacle) => obstacle.row === row && obstacle.col === col && obstacle.hp > 0);
+}
+
+function breakthroughCellBlocked(obstacles: BreakthroughObstacle[], enemies: BreakthroughEnemy[], row: number, col: number) {
+  if (row < 0 || row >= breakthroughRows || col < 0 || col >= breakthroughCols) return true;
+  if (breakthroughObstacleBlocks(breakthroughObstacleAt(obstacles, row, col))) return true;
+  return enemies.some((enemy) => enemy.hp > 0 && Math.round(enemy.y) === row && Math.round(enemy.x) === col);
+}
+
+function createBreakthroughEnemy(id: number, kind: BreakthroughEnemy['kind'], row: number, col: number): BreakthroughEnemy {
+  const maxHp = kind === 'boss' ? 14 : kind === 'anemone' ? 4 : kind === 'urchin' ? 3 : 2;
+  return {
+    id,
+    kind,
+    row,
+    col,
+    x: col,
+    y: row,
+    dir: 'down',
+    hp: maxHp,
+    maxHp,
+    cooldown: kind === 'urchin' ? Number.POSITIVE_INFINITY : 600 + Math.random() * 900,
+    moveAt: performance.now() + 650 + Math.random() * 900,
+    poisonAt: kind === 'urchin' ? performance.now() + 1100 + Math.random() * 1200 : undefined,
+  };
+}
+
+function createBreakthroughEnemies(obstacles: BreakthroughObstacle[]) {
+  const enemies: BreakthroughEnemy[] = [];
+  let id = 1;
+  const add = (kind: BreakthroughEnemy['kind'], row: number, col: number) => {
+    if (breakthroughObstacleAt(obstacles, row, col)) return;
+    enemies.push(createBreakthroughEnemy(id++, kind, row, col));
+  };
+
+  add('boss', breakthroughBossStart.row, breakthroughBossStart.col);
+  for (let row = 9; row < breakthroughRows - 8; row += 5) {
+    const sector = row < 22 ? 1 : row < 40 ? 2 : 3;
+    add('tank', row, randomInt(2, breakthroughCols - 3));
+    if (sector >= 1 && Math.random() < 0.72) add('anemone', row + 1, randomInt(1, breakthroughCols - 2));
+    if (sector >= 2 && Math.random() < 0.55) add('urchin', row + 2, randomInt(2, breakthroughCols - 3));
+    if (sector >= 3 && Math.random() < 0.66) add('tank', row + 3, randomInt(1, breakthroughCols - 2));
+  }
+  return enemies;
+}
+
+function createBreakthroughPlayer(character: LightBombCharacterId): BreakthroughPlayer {
+  const stats = breakthroughCharacterStats[character];
+  return {
+    character,
+    row: breakthroughStart.row,
+    col: breakthroughStart.col,
+    x: breakthroughStart.col,
+    y: breakthroughStart.row,
+    dir: breakthroughStart.dir,
+    hp: stats.hp,
+    maxHp: stats.hp,
+    cooldown: 0,
+  };
+}
+
+function breakthroughInsidePoison(row: number, col: number, clouds: BreakthroughPoisonCloud[], time: number) {
+  return clouds.some((cloud) => cloud.expiresAt > time && Math.abs(row - cloud.row) <= 2 && Math.abs(col - cloud.col) <= 2);
+}
+
+function breakthroughCameraFor(player: { x: number; y: number }) {
+  return {
+    x: clamp(player.x - breakthroughViewCols / 2, 0, breakthroughCols - breakthroughViewCols),
+    y: clamp(player.y - breakthroughViewRows * 0.68, 0, breakthroughRows - breakthroughViewRows),
+  };
+}
+
+function breakthroughSmoothCell<T extends { x: number; y: number }>(previous: T | undefined, target: T, dt: number, moveMs = 132): T {
+  if (!previous || Math.hypot(target.x - previous.x, target.y - previous.y) > 8) return target;
+  const maxDelta = dt / moveMs;
+  return {
+    ...target,
+    x: cityApproach(previous.x, target.x, maxDelta),
+    y: cityApproach(previous.y, target.y, maxDelta),
+  };
+}
+
 function lightBombKey(row: number, col: number) {
   return `${row}-${col}`;
 }
@@ -2479,7 +2722,7 @@ function useVisualViewportFrame() {
 function initialScreenFromQuery(): Screen {
   if (typeof window === 'undefined') return 'title';
   const scene = new URLSearchParams(window.location.search).get('scene');
-  const directScreens: Screen[] = ['map', 'combat', 'memory', 'breakout', 'minefield', 'snowfield', 'snake', 'tower', 'city', 'lightbomb', 'revelation'];
+  const directScreens: Screen[] = ['map', 'combat', 'memory', 'breakout', 'minefield', 'snowfield', 'snake', 'tower', 'city', 'breakthrough', 'lightbomb', 'revelation'];
   return directScreens.includes(scene as Screen) ? scene as Screen : 'title';
 }
 
@@ -2683,6 +2926,10 @@ export default function App() {
             onSnake={() => openVideoLeadIn(videoLeadIns.tideTribe)}
             onTower={() => openVideoLeadIn(videoLeadIns.abyssTower)}
             onCity={() => openVideoLeadIn(videoLeadIns.underseaCity)}
+            onBreakthrough={() => {
+              void startOceanBgm('city', 1.16);
+              setScreen('breakthrough');
+            }}
             onLightBomb={() => openVideoLeadIn(videoLeadIns.lightBombMaze)}
             onRevelation={() => openVideoLeadIn(videoLeadIns.ancientRevelation)}
           />
@@ -2695,6 +2942,7 @@ export default function App() {
         {screen === 'snake' && <TideSnakeGame key={`snake-${screenResetKey}`} debugGrid={gameSettings.debugGrid} onBack={showMap} onComplete={(score) => recordGameProgress('snake', score)} />}
         {screen === 'tower' && <AbyssTowerGame key={`tower-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('tower', score)} />}
         {screen === 'city' && <UnderseaCityGame key={`city-${screenResetKey}`} debugGrid={gameSettings.debugGrid} onBack={showMap} onComplete={(score) => recordGameProgress('city', score)} />}
+        {screen === 'breakthrough' && <BreakthroughShooterGame key={`breakthrough-${screenResetKey}`} debugGrid={gameSettings.debugGrid} onBack={showMap} onComplete={(score) => recordGameProgress('breakthrough', score)} />}
         {screen === 'lightbomb' && <LightBombMazeGame key={`lightbomb-${screenResetKey}`} debugGrid={gameSettings.debugGrid} onBack={showMap} onComplete={(score) => recordGameProgress('lightbomb', score)} />}
         {screen === 'revelation' && <AncientRevelationGame key={`revelation-${screenResetKey}`} onBack={showMap} onComplete={(score) => recordGameProgress('revelation', score)} />}
         {screen === 'video' && (
@@ -2899,6 +3147,7 @@ function EpisodeMap({
   onSnake,
   onTower,
   onCity,
+  onBreakthrough,
   onLightBomb,
   onRevelation,
 }: {
@@ -2912,6 +3161,7 @@ function EpisodeMap({
   onSnake: () => void;
   onTower: () => void;
   onCity: () => void;
+  onBreakthrough: () => void;
   onLightBomb: () => void;
   onRevelation: () => void;
 }) {
@@ -2929,6 +3179,7 @@ function EpisodeMap({
     { name: '海潮部落', scene: 'snake', style: 'snake', onClick: onSnake },
     { name: '深淵高塔', scene: 'tower', style: 'tower', onClick: onTower },
     { name: '海底城市', scene: 'city', style: 'city', onClick: onCity },
+    { name: '海底突圍', scene: 'breakthrough', style: 'breakthrough', onClick: onBreakthrough },
     { name: '海光迷宮', scene: 'lightbomb', style: 'lightbomb', onClick: onLightBomb },
     { name: '王國冰晶', scene: 'revelation', style: 'revelation', onClick: onRevelation },
   ];
@@ -6147,6 +6398,641 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
               <strong>{status === 'won' ? '三重防線完成' : '防線失守'}</strong>
               <div className="row-actions">
                 <button onClick={status === 'won' ? restart : continueCity}>{status === 'won' ? '再守一次' : '半能量續戰'}</button>
+                <button className="primary-action" onClick={onBack}>返回地圖</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; onBack: () => void; onComplete: GameCompleteHandler }) {
+  const arenaRef = useRef<HTMLDivElement | null>(null);
+  const pausedRef = useGamePausedRef();
+  const rafRef = useRef<number | null>(null);
+  const lastTime = useRef<number | null>(null);
+  const nextId = useRef(1);
+  const noticeId = useRef(0);
+  const totalEnemiesRef = useRef(0);
+  const exitNoticeShownRef = useRef(false);
+  const movePointerRef = useRef<number | null>(null);
+  const firePointerRef = useRef<number | null>(null);
+  const heldDirectionRef = useRef<DirectionPadIntent>(null);
+  const diagonalAxisRef = useRef<'horizontal' | 'vertical'>('horizontal');
+  const nextMoveAtRef = useRef(0);
+  const firePressedRef = useRef(false);
+  const completionReported = useRef(false);
+  const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
+  const [selectedCharacter, setSelectedCharacter] = useState<LightBombCharacterId>('prince');
+  const [status, setStatus] = useState<BreakthroughStatus>('select');
+  const [obstacles, setObstacles] = useState<BreakthroughObstacle[]>([]);
+  const [enemies, setEnemies] = useState<BreakthroughEnemy[]>([]);
+  const [visualEnemies, setVisualEnemies] = useState<BreakthroughEnemy[]>([]);
+  const [shots, setShots] = useState<BreakthroughShot[]>([]);
+  const [powerups, setPowerups] = useState<BreakthroughPowerup[]>([]);
+  const [poisonClouds, setPoisonClouds] = useState<BreakthroughPoisonCloud[]>([]);
+  const [player, setPlayer] = useState<BreakthroughPlayer>(() => createBreakthroughPlayer('prince'));
+  const [visualPlayer, setVisualPlayer] = useState<BreakthroughPlayer>(() => createBreakthroughPlayer('prince'));
+  const [camera, setCamera] = useState(() => breakthroughCameraFor(createBreakthroughPlayer('prince')));
+  const [weaponState, setWeaponState] = useState<CityWeaponState>(cityEmptyWeapons);
+  const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
+  const [padVector, setPadVector] = useState<DirectionPadVector>({ x: 0, y: 0 });
+  const [notice, setNotice] = useState<BreakthroughNotice>(null);
+  const statusRef = useRef<BreakthroughStatus>('select');
+  const obstaclesRef = useRef<BreakthroughObstacle[]>([]);
+  const enemiesRef = useRef<BreakthroughEnemy[]>([]);
+  const visualEnemiesRef = useRef<BreakthroughEnemy[]>([]);
+  const shotsRef = useRef<BreakthroughShot[]>([]);
+  const powerupsRef = useRef<BreakthroughPowerup[]>([]);
+  const poisonCloudsRef = useRef<BreakthroughPoisonCloud[]>([]);
+  const playerRef = useRef<BreakthroughPlayer>(createBreakthroughPlayer('prince'));
+  const visualPlayerRef = useRef<BreakthroughPlayer>(createBreakthroughPlayer('prince'));
+  const cameraRef = useRef(breakthroughCameraFor(createBreakthroughPlayer('prince')));
+  const weaponStateRef = useRef<CityWeaponState>(cityEmptyWeapons());
+
+  const showNotice = useCallback((kind: CityNoticeKind | 'win', text: string) => {
+    noticeId.current += 1;
+    setNotice({ id: noticeId.current, kind, text });
+  }, []);
+
+  const resetWeapons = useCallback(() => {
+    const empty = cityEmptyWeapons();
+    weaponStateRef.current = empty;
+    setWeaponState(empty);
+  }, []);
+
+  const activateWeapon = useCallback((weapon: CityWeaponKind) => {
+    const next = { ...weaponStateRef.current, [weapon]: true };
+    weaponStateRef.current = next;
+    setWeaponState(next);
+  }, []);
+
+  const startRun = useCallback((character: LightBombCharacterId) => {
+    const nextObstacles = createBreakthroughObstacles();
+    const nextEnemies = createBreakthroughEnemies(nextObstacles);
+    const nextPlayer = createBreakthroughPlayer(character);
+    const nextCamera = breakthroughCameraFor(nextPlayer);
+    nextId.current = 1000;
+    totalEnemiesRef.current = nextEnemies.length;
+    exitNoticeShownRef.current = false;
+    lastTime.current = null;
+    completionReported.current = false;
+    statusRef.current = 'playing';
+    obstaclesRef.current = nextObstacles;
+    enemiesRef.current = nextEnemies;
+    visualEnemiesRef.current = nextEnemies;
+    shotsRef.current = [];
+    powerupsRef.current = [];
+    poisonCloudsRef.current = [];
+    playerRef.current = nextPlayer;
+    visualPlayerRef.current = nextPlayer;
+    cameraRef.current = nextCamera;
+    firePressedRef.current = false;
+    heldDirectionRef.current = null;
+    diagonalAxisRef.current = 'horizontal';
+    nextMoveAtRef.current = 0;
+    resetWeapons();
+    setSelectedCharacter(character);
+    setStatus('playing');
+    setObstacles(nextObstacles);
+    setEnemies(nextEnemies);
+    setVisualEnemies(nextEnemies);
+    setShots([]);
+    setPowerups([]);
+    setPoisonClouds([]);
+    setPlayer(nextPlayer);
+    setVisualPlayer(nextPlayer);
+    setCamera(nextCamera);
+    setPadDirection(null);
+    setPadVector({ x: 0, y: 0 });
+    setOceanBgmIntensity(1.16);
+    void startOceanBgm('city', 1.16);
+    showNotice('spawn', '海底突圍開始');
+  }, [resetWeapons, showNotice]);
+
+  const restart = useCallback(() => {
+    startRun(selectedCharacter);
+  }, [selectedCharacter, startRun]);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  useEffect(() => {
+    const arena = arenaRef.current;
+    if (!arena) return;
+    const updateSize = () => {
+      const rect = arena.getBoundingClientRect();
+      setArenaSize({ width: rect.width, height: rect.height });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(arena);
+    return () => observer.disconnect();
+  }, []);
+
+  const tryMovePlayer = useCallback((direction: CityDirection) => {
+    if (statusRef.current !== 'playing') return false;
+    const current = { ...playerRef.current, dir: direction };
+    const vector = cityDirectionVector(direction);
+    const nextRow = clamp(current.row + vector.y, 0, breakthroughRows - 1);
+    const nextCol = clamp(current.col + vector.x, 0, breakthroughCols - 1);
+    if (!breakthroughCellBlocked(obstaclesRef.current, enemiesRef.current, nextRow, nextCol)) {
+      current.row = nextRow;
+      current.col = nextCol;
+      current.x = nextCol;
+      current.y = nextRow;
+      playerRef.current = current;
+      playGameSfx('step');
+      return true;
+    }
+    playerRef.current = current;
+    return false;
+  }, []);
+
+  const moveIntent = useCallback((intent: DirectionPadIntent) => {
+    if (!intent) return false;
+    if (intent.secondary) {
+      const directions = [intent.primary, intent.secondary];
+      const horizontal = directions.find((direction) => direction === 'left' || direction === 'right');
+      const vertical = directions.find((direction) => direction === 'up' || direction === 'down');
+      const ordered = diagonalAxisRef.current === 'horizontal' ? [horizontal, vertical] : [vertical, horizontal];
+      const moved = ordered.some((direction) => direction ? tryMovePlayer(direction) : false);
+      if (moved) diagonalAxisRef.current = diagonalAxisRef.current === 'horizontal' ? 'vertical' : 'horizontal';
+      return moved;
+    }
+    return tryMovePlayer(intent.primary);
+  }, [tryMovePlayer]);
+
+  const holdDirection = useCallback((intent: DirectionPadIntent, vector: DirectionPadVector = { x: 0, y: 0 }, startTime = performance.now()) => {
+    const wasHolding = heldDirectionRef.current !== null;
+    const sameIntent = directionPadIntentsEqual(heldDirectionRef.current, intent);
+    heldDirectionRef.current = intent;
+    setPadDirection(intent?.primary ?? null);
+    setPadVector(intent ? vector : { x: 0, y: 0 });
+    if (!intent) {
+      diagonalAxisRef.current = 'horizontal';
+      nextMoveAtRef.current = Number.POSITIVE_INFINITY;
+      return;
+    }
+    if (intent.secondary && !sameIntent) diagonalAxisRef.current = 'horizontal';
+    if (!sameIntent) {
+      playerRef.current = { ...playerRef.current, dir: intent.primary };
+      visualPlayerRef.current = { ...visualPlayerRef.current, dir: intent.primary };
+    }
+    const stats = breakthroughCharacterStats[playerRef.current.character];
+    const poisoned = breakthroughInsidePoison(playerRef.current.row, playerRef.current.col, poisonCloudsRef.current, startTime);
+    const pace = poisoned ? cityPoisonSlowScale : 1;
+    if (!wasHolding) {
+      const moved = moveIntent(intent);
+      nextMoveAtRef.current = startTime + (moved ? stats.moveMs / pace : cityTurnRetryMs / pace);
+    } else if (!sameIntent) {
+      nextMoveAtRef.current = Math.min(nextMoveAtRef.current, startTime + cityTurnBufferMs / pace);
+    }
+  }, [moveIntent]);
+
+  const updateMovePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const input = directionPadInputFromPointer(event.clientX, event.clientY, event.currentTarget);
+    holdDirection(input.intent, input.vector);
+  }, [holdDirection]);
+
+  const releaseMovePad = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (event && movePointerRef.current !== null && event.pointerId !== movePointerRef.current) return;
+    movePointerRef.current = null;
+    holdDirection(null);
+  }, [holdDirection]);
+
+  const pressFire = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (firePointerRef.current !== null) return;
+    firePointerRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    firePressedRef.current = true;
+  }, []);
+
+  const releaseFire = useCallback((event?: ReactPointerEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (event && firePointerRef.current !== null && event.pointerId !== firePointerRef.current) return;
+    firePointerRef.current = null;
+    firePressedRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    const clearControls = () => {
+      releaseMovePad();
+      releaseFire();
+    };
+    window.addEventListener('blur', clearControls);
+    window.addEventListener('pagehide', clearControls);
+    return () => {
+      window.removeEventListener('blur', clearControls);
+      window.removeEventListener('pagehide', clearControls);
+    };
+  }, [releaseFire, releaseMovePad]);
+
+  useEffect(() => {
+    const tick = (time: number) => {
+      if (pausedRef.current) {
+        lastTime.current = time;
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      const last = lastTime.current ?? time;
+      const dt = Math.min(34, time - last);
+      lastTime.current = time;
+
+      if (statusRef.current === 'playing') {
+        const currentPlayer = { ...playerRef.current };
+        const stats = breakthroughCharacterStats[currentPlayer.character];
+        const playerPoisoned = breakthroughInsidePoison(currentPlayer.row, currentPlayer.col, poisonCloudsRef.current, time);
+        const playerPace = playerPoisoned ? cityPoisonSlowScale : 1;
+        const heldIntent = heldDirectionRef.current;
+        if (heldIntent && time >= nextMoveAtRef.current) {
+          const moved = moveIntent(heldIntent);
+          nextMoveAtRef.current = time + (moved ? stats.moveMs / playerPace : cityTurnRetryMs / playerPace);
+        }
+
+        currentPlayer.cooldown -= dt * playerPace;
+        const weapons = weaponStateRef.current;
+        if (firePressedRef.current && currentPlayer.cooldown <= 0) {
+          const vector = cityDirectionVector(currentPlayer.dir);
+          const side = citySideVector(currentPlayer.dir);
+          const piercing = Boolean(stats.piercing || weapons.pierce);
+          const spread = Boolean(stats.spread || weapons.spread);
+          const double = Boolean(stats.double || weapons.double);
+          const big = Boolean(stats.big);
+          const shotSpeed = stats.shotSpeed * (weapons.rapid ? 1.08 : 1);
+          const makeShot = (sideOffset: number, sideVelocity: number): BreakthroughShot => ({
+            id: nextId.current++,
+            side: 'ally',
+            x: currentPlayer.x + vector.x * 0.58 + side.x * sideOffset,
+            y: currentPlayer.y + vector.y * 0.58 + side.y * sideOffset,
+            vx: vector.x * shotSpeed + side.x * sideVelocity,
+            vy: vector.y * shotSpeed + side.y * sideVelocity,
+            dir: currentPlayer.dir,
+            damage: stats.damage,
+            piercing,
+            big,
+          });
+          const nextShots = [makeShot(0, 0)];
+          if (double) nextShots.push(makeShot(0.25, 0), makeShot(-0.25, 0));
+          if (spread) nextShots.push(makeShot(0, 0.0065), makeShot(0, -0.0065));
+          shotsRef.current = [...shotsRef.current, ...nextShots].slice(-48);
+          currentPlayer.cooldown = (weapons.rapid ? stats.cooldownMs * 0.68 : stats.cooldownMs) + (spread ? 60 : 0) + (double ? 40 : 0);
+          playGameSfx(big ? 'blast' : 'shoot');
+        }
+
+        let nextObstacles = obstaclesRef.current;
+        let obstaclesChanged = false;
+        let nextEnemies = enemiesRef.current.map((enemy) => ({ ...enemy }));
+        let nextPowerups = powerupsRef.current.filter((powerup) => powerup.expiresAt > time);
+        let nextPoison = poisonCloudsRef.current.filter((cloud) => cloud.expiresAt > time);
+        const enemyShots: BreakthroughShot[] = [];
+        nextEnemies = nextEnemies.map((enemy) => {
+          const active = enemy.y <= cameraRef.current.y + breakthroughViewRows + 5 && enemy.y >= cameraRef.current.y - 5;
+          if (!active || enemy.hp <= 0) return enemy;
+          const nextEnemy = { ...enemy };
+          if ((nextEnemy.kind === 'tank' || nextEnemy.kind === 'urchin') && time >= nextEnemy.moveAt) {
+            const preferred: CityDirection[] = nextEnemy.kind === 'urchin'
+              ? (['up', 'down', 'left', 'right'] as CityDirection[])
+              : [cityDirectionToward(nextEnemy, currentPlayer), 'down', 'left', 'right', 'up'];
+            const directions = preferred.sort(() => Math.random() - 0.5);
+            const blockers = nextEnemies.filter((other) => other.id !== nextEnemy.id && other.hp > 0);
+            for (const direction of directions) {
+              const vector = cityDirectionVector(direction);
+              const row = clamp(Math.round(nextEnemy.y) + vector.y, 0, breakthroughRows - 1);
+              const col = clamp(Math.round(nextEnemy.x) + vector.x, 0, breakthroughCols - 1);
+              if (!breakthroughCellBlocked(nextObstacles, blockers, row, col) && !(row === currentPlayer.row && col === currentPlayer.col)) {
+                nextEnemy.row = row;
+                nextEnemy.col = col;
+                nextEnemy.x = col;
+                nextEnemy.y = row;
+                nextEnemy.dir = direction;
+                break;
+              }
+            }
+            nextEnemy.moveAt = time + (nextEnemy.kind === 'urchin' ? 820 + Math.random() * 460 : 980 + Math.random() * 620);
+          }
+          if (nextEnemy.kind === 'urchin' && (nextEnemy.poisonAt ?? 0) <= time) {
+            nextPoison = [...nextPoison, {
+              id: nextId.current++,
+              row: Math.round(nextEnemy.y),
+              col: Math.round(nextEnemy.x),
+              expiresAt: time + breakthroughPoisonDurationMs,
+            }].slice(-8);
+            nextEnemy.poisonAt = time + 4500 + Math.random() * 2600;
+          }
+          if (nextEnemy.kind !== 'urchin') {
+            nextEnemy.cooldown -= dt;
+            if (nextEnemy.cooldown <= 0) {
+              nextEnemy.dir = cityDirectionToward(nextEnemy, currentPlayer);
+              const vector = cityDirectionVector(nextEnemy.dir);
+              const speed = nextEnemy.kind === 'boss' ? 0.011 : nextEnemy.kind === 'anemone' ? 0.01 : 0.009;
+              enemyShots.push({
+                id: nextId.current++,
+                side: 'enemy',
+                x: nextEnemy.x + vector.x * 0.55,
+                y: nextEnemy.y + vector.y * 0.55,
+                vx: vector.x * speed,
+                vy: vector.y * speed,
+                dir: nextEnemy.dir,
+                damage: nextEnemy.kind === 'boss' ? 2 : 1,
+                big: nextEnemy.kind === 'boss',
+              });
+              nextEnemy.cooldown = nextEnemy.kind === 'boss' ? 940 + Math.random() * 520 : 1350 + Math.random() * 850;
+            }
+          }
+          return nextEnemy;
+        });
+
+        let nextHp = currentPlayer.hp;
+        const movedShots = [...shotsRef.current, ...enemyShots]
+          .map((shot) => ({ ...shot, x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt }))
+          .filter((shot) => shot.x >= -1 && shot.x <= breakthroughCols + 1 && shot.y >= -2 && shot.y <= breakthroughRows + 2);
+        const resolvedShots: BreakthroughShot[] = [];
+        movedShots.forEach((shot) => {
+          const row = clamp(Math.round(shot.y), 0, breakthroughRows - 1);
+          const col = clamp(Math.round(shot.x), 0, breakthroughCols - 1);
+          const obstacleIndex = nextObstacles.findIndex((obstacle) => obstacle.row === row && obstacle.col === col && obstacle.hp > 0);
+          if (obstacleIndex >= 0) {
+            const obstacle = nextObstacles[obstacleIndex];
+            if (shot.side === 'ally' && breakthroughObstacleBreaks(obstacle)) {
+              if (!obstaclesChanged) nextObstacles = [...nextObstacles];
+              const nextObstacleHp = obstacle.hp - shot.damage;
+              if (nextObstacleHp <= 0) nextObstacles.splice(obstacleIndex, 1);
+              else nextObstacles[obstacleIndex] = { ...obstacle, hp: nextObstacleHp };
+              obstaclesChanged = true;
+            }
+            if (shot.side === 'ally' && shot.piercing && breakthroughObstacleBreaks(obstacle)) resolvedShots.push(shot);
+            return;
+          }
+          if (shot.side === 'ally') {
+            const radius = shot.big ? 0.78 : 0.48;
+            const target = nextEnemies.find((enemy) => enemy.hp > 0 && Math.hypot(enemy.x - shot.x, enemy.y - shot.y) < radius);
+            if (target) {
+              target.hp -= shot.damage;
+              if (target.hp <= 0) {
+                playGameSfx(target.kind === 'boss' ? 'level' : 'blast');
+                if (target.kind !== 'boss' && Math.random() < 0.48) {
+                  nextPowerups = [...nextPowerups, {
+                    id: nextId.current++,
+                    kind: randomCityPowerupKind(),
+                    row: Math.round(target.y),
+                    col: Math.round(target.x),
+                    x: target.x,
+                    y: target.y,
+                    expiresAt: time + breakthroughPowerupDurationMs,
+                  }].slice(-8);
+                }
+              }
+              if (shot.piercing) resolvedShots.push(shot);
+              return;
+            }
+          } else if (Math.hypot(currentPlayer.x - shot.x, currentPlayer.y - shot.y) < (shot.big ? 0.72 : 0.52)) {
+            nextHp -= shot.damage;
+            playGameSfx('hit');
+            showNotice('damage', `體力 -${shot.damage}`);
+            return;
+          }
+          resolvedShots.push(shot);
+        });
+
+        nextEnemies = nextEnemies.filter((enemy) => enemy.hp > 0);
+        nextPowerups = nextPowerups.filter((powerup) => {
+          if (Math.hypot(powerup.x - currentPlayer.x, powerup.y - currentPlayer.y) > 0.8) return true;
+          const weapon = cityWeaponFromPowerup(powerup.kind);
+          if (weapon) {
+            activateWeapon(weapon);
+          } else if (powerup.kind === 'armor' || powerup.kind === 'repair') {
+            nextHp = Math.min(currentPlayer.maxHp, nextHp + 1);
+          } else if (powerup.kind === 'blast') {
+            nextEnemies = nextEnemies
+              .map((enemy) => ({ ...enemy, hp: enemy.hp - (enemy.kind === 'boss' ? 2 : 1) }))
+              .filter((enemy) => enemy.hp > 0);
+          } else if (powerup.kind === 'freeze') {
+            nextEnemies = nextEnemies.map((enemy) => ({ ...enemy, moveAt: enemy.moveAt + 1800, cooldown: enemy.cooldown + 1200 }));
+          } else if (powerup.kind === 'shield') {
+            nextHp = Math.min(currentPlayer.maxHp, nextHp + 2);
+          }
+          playGameSfx('powerup');
+          showNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
+          return false;
+        });
+
+        currentPlayer.hp = nextHp;
+        playerRef.current = currentPlayer;
+        obstaclesRef.current = nextObstacles;
+        enemiesRef.current = nextEnemies;
+        shotsRef.current = resolvedShots.slice(-56);
+        powerupsRef.current = nextPowerups;
+        poisonCloudsRef.current = nextPoison;
+        const nextVisualPlayer = breakthroughSmoothCell(visualPlayerRef.current, currentPlayer, dt, stats.moveMs);
+        const visualEnemyLookup = new Map(visualEnemiesRef.current.map((enemy) => [enemy.id, enemy]));
+        const nextVisualEnemies = nextEnemies.map((enemy) => breakthroughSmoothCell(visualEnemyLookup.get(enemy.id), enemy, dt, 170));
+        const targetCamera = breakthroughCameraFor(nextVisualPlayer);
+        const nextCamera = {
+          x: cityApproach(cameraRef.current.x, targetCamera.x, dt / 110),
+          y: cityApproach(cameraRef.current.y, targetCamera.y, dt / 92),
+        };
+        visualPlayerRef.current = nextVisualPlayer;
+        visualEnemiesRef.current = nextVisualEnemies;
+        cameraRef.current = nextCamera;
+        if (obstaclesChanged) setObstacles(nextObstacles);
+        setPlayer(currentPlayer);
+        setVisualPlayer(nextVisualPlayer);
+        setEnemies(nextEnemies);
+        setVisualEnemies(nextVisualEnemies);
+        setCamera(nextCamera);
+        setShots(shotsRef.current);
+        setPowerups(nextPowerups);
+        setPoisonClouds(nextPoison);
+
+        const bossAlive = nextEnemies.some((enemy) => enemy.kind === 'boss');
+        if (nextHp <= 0) {
+          statusRef.current = 'lost';
+          setStatus('lost');
+          resetWeapons();
+          showNotice('damage', '突圍失敗，武裝失效');
+        } else if (!bossAlive && currentPlayer.row <= breakthroughGoalRow) {
+          statusRef.current = 'won';
+          setStatus('won');
+          showNotice('win', '海底通路突破');
+          if (!completionReported.current) {
+            completionReported.current = true;
+            const defeated = totalEnemiesRef.current - nextEnemies.length;
+            onComplete(2200 + defeated * 72 + currentPlayer.hp * 180 + Object.values(weaponStateRef.current).filter(Boolean).length * 220);
+          }
+        } else if (!bossAlive && currentPlayer.row <= 5 && !exitNoticeShownRef.current) {
+          exitNoticeShownRef.current = true;
+          showNotice('spawn', '出口開啟，繼續向上');
+        }
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [activateWeapon, moveIntent, onComplete, resetWeapons, showNotice]);
+
+  const cellPx = Math.max(20, Math.min((arenaSize.width || 360) / breakthroughViewCols, (arenaSize.height || 540) / breakthroughViewRows));
+  const viewportStyle: CSSProperties = {
+    width: `${cellPx * breakthroughViewCols}px`,
+    height: `${cellPx * breakthroughViewRows}px`,
+    ['--breakthrough-cell-px' as string]: `${cellPx}px`,
+  };
+  const worldStyle: CSSProperties = {
+    width: `${cellPx * breakthroughCols}px`,
+    height: `${cellPx * breakthroughRows}px`,
+    transform: `translate3d(${-camera.x * cellPx}px, ${-camera.y * cellPx}px, 0)`,
+    ['--city-powerup-size' as string]: `${cellPx * 0.92}px`,
+  };
+  const tokenStyle = (x: number, y: number): CSSProperties => ({ left: `${x * cellPx}px`, top: `${y * cellPx}px` });
+  const cellStyle = (row: number, col: number): CSSProperties => ({ left: `${col * cellPx}px`, top: `${row * cellPx}px`, width: `${cellPx}px`, height: `${cellPx}px` });
+  const bossAlive = enemies.some((enemy) => enemy.kind === 'boss');
+  const selectedDef = lightBombCharacterDef(selectedCharacter);
+  const selectedStats = breakthroughCharacterStats[selectedCharacter];
+  const playerPoisoned = breakthroughInsidePoison(player.row, player.col, poisonClouds, performance.now());
+  const padStyle: CSSProperties = {
+    ['--pad-x' as string]: `${padVector.x}px`,
+    ['--pad-y' as string]: `${padVector.y}px`,
+  };
+  const debugItems: GridDebugItem[] = [
+    { label: 'cell', value: breakthroughKey(player.row, player.col) },
+    { label: 'camera', value: `${camera.x.toFixed(1)},${camera.y.toFixed(1)}` },
+    { label: 'intent', value: directionPadIntentLabel(heldDirectionRef.current) },
+    { label: 'shots', value: shots.length },
+    { label: 'enemies', value: enemies.length },
+  ];
+
+  if (status === 'select') {
+    return (
+      <section className="screen breakthrough-screen breakthrough-select-screen">
+        <div className="city-nav">
+          <button className="icon-button" onClick={onBack} aria-label="返回">
+            <ChevronLeft size={20} />
+          </button>
+        </div>
+        <div className="breakthrough-select">
+          <strong>海底突圍</strong>
+          <div className="breakthrough-roster">
+            {lightBombCharacters.map((character) => (
+              <button
+                className={`breakthrough-card ${selectedCharacter === character.id ? 'selected' : ''}`}
+                key={character.id}
+                onClick={() => setSelectedCharacter(character.id)}
+              >
+                <img src={character.image} alt="" />
+                <span>{character.name}</span>
+                <small>{breakthroughCharacterAbilityText[character.id]}</small>
+              </button>
+            ))}
+          </div>
+          <div className="breakthrough-selected">
+            <img src={selectedDef.image} alt="" />
+            <span>{selectedDef.name}</span>
+            <small>體力 {selectedStats.hp} · {breakthroughCharacterAbilityText[selectedCharacter]}</small>
+          </div>
+          <button className="primary-action" onClick={() => startRun(selectedCharacter)}>開始突圍</button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="screen breakthrough-screen">
+      <div className="city-nav">
+        <button className="icon-button" onClick={onBack} aria-label="返回">
+          <ChevronLeft size={20} />
+        </button>
+        <button className="icon-button" onClick={restart} aria-label="重新開始">
+          <RotateCcw size={20} />
+        </button>
+      </div>
+      <div className="breakthrough-arena" ref={arenaRef}>
+        <div className="breakthrough-viewport" style={viewportStyle}>
+          <div className="breakthrough-world" style={worldStyle}>
+            <span className={`breakthrough-goal ${bossAlive ? 'locked' : 'open'}`} style={cellStyle(breakthroughGoalRow, breakthroughBossStart.col)} />
+            {obstacles.map((obstacle) => (
+              <span className={`breakthrough-tile ${obstacle.kind} hp-${obstacle.hp}`} key={obstacle.id} style={cellStyle(obstacle.row, obstacle.col)} />
+            ))}
+            {poisonClouds.map((cloud) => (
+              <span className="breakthrough-poison" key={cloud.id} style={{ left: `${(cloud.col - 1.5) * cellPx}px`, top: `${(cloud.row - 1.5) * cellPx}px`, width: `${cellPx * 4}px`, height: `${cellPx * 4}px` }} />
+            ))}
+            {powerups.map((powerup) => (
+              <div className={`city-powerup breakthrough-powerup ${powerup.kind}`} key={powerup.id} style={tokenStyle(powerup.x, powerup.y)}>
+                <img src={assets.pickup} alt="" />
+              </div>
+            ))}
+            {visualEnemies.map((enemy) => (
+              <div className={`breakthrough-enemy ${enemy.kind} dir-${enemy.dir}`} key={enemy.id} style={tokenStyle(enemy.x, enemy.y)}>
+                <img src={enemy.kind === 'boss' || enemy.kind === 'anemone' ? assets.cityUnits.anemone : enemy.kind === 'urchin' ? assets.cityUnits.urchin[enemy.dir] : assets.cityUnits.enemy[enemy.dir]} alt="" />
+                <i style={{ width: `${clamp(enemy.hp / enemy.maxHp, 0, 1) * 100}%` }} />
+              </div>
+            ))}
+            <div className={`breakthrough-player ${visualPlayer.character} dir-${visualPlayer.dir} ${playerPoisoned ? 'poisoned' : ''} ${Object.entries(weaponState).filter(([, active]) => active).map(([weapon]) => `weapon-${weapon}`).join(' ')}`} style={tokenStyle(visualPlayer.x, visualPlayer.y)}>
+              <img src={lightBombCharacterDef(visualPlayer.character).image} alt="" />
+            </div>
+            {shots.map((shot) => (
+              <span className={`breakthrough-shot ${shot.side} dir-${shot.dir} ${shot.big ? 'big' : ''} ${shot.piercing ? 'piercing' : ''}`} key={shot.id} style={tokenStyle(shot.x, shot.y)} />
+            ))}
+          </div>
+          <div className="breakthrough-hud">
+            <span>{lightBombCharacterDef(player.character).name}</span>
+            <span>體力 {player.hp}/{player.maxHp}</span>
+            <span>高度 {Math.max(0, breakthroughStart.row - player.row)}</span>
+            <span>{bossAlive ? '守門未破' : '出口開啟'}</span>
+          </div>
+          {debugGrid && <GridDebugOverlay title="BREAKTHROUGH" items={debugItems} />}
+          {notice && <div className={`city-notice ${notice.kind}`} key={notice.id}>{notice.text}</div>}
+          <div
+            className={`city-controls ${padDirection ? `active-${padDirection}` : ''}`}
+            aria-label="方向控制"
+            onPointerDown={(event) => {
+              if (movePointerRef.current !== null) return;
+              movePointerRef.current = event.pointerId;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              updateMovePad(event);
+            }}
+            onPointerMove={(event) => {
+              if (movePointerRef.current === event.pointerId) updateMovePad(event);
+            }}
+            onPointerUp={releaseMovePad}
+            onPointerCancel={releaseMovePad}
+            onLostPointerCapture={releaseMovePad}
+          >
+            <span className="city-stick-base" />
+            <span className="city-stick-arrow up"><ChevronUp size={14} /></span>
+            <span className="city-stick-arrow left"><ChevronLeft size={14} /></span>
+            <span className="city-stick-arrow right"><ChevronRight size={14} /></span>
+            <span className="city-stick-arrow down"><ChevronDown size={14} /></span>
+            <span className="city-stick" style={padStyle} />
+          </div>
+          <button
+            className="city-fire-control breakthrough-fire-control"
+            onPointerDown={pressFire}
+            onPointerUp={releaseFire}
+            onPointerCancel={releaseFire}
+            onPointerLeave={releaseFire}
+            aria-label="海光射擊"
+          >
+            <Zap size={22} />
+            <small>射擊</small>
+          </button>
+          {status !== 'playing' && (
+            <div className="city-result breakthrough-result">
+              <strong>{status === 'won' ? '突圍成功' : '突圍失敗'}</strong>
+              <div className="row-actions">
+                <button onClick={restart}>再闖一次</button>
                 <button className="primary-action" onClick={onBack}>返回地圖</button>
               </div>
             </div>
