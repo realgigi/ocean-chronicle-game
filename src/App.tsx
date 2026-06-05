@@ -577,6 +577,9 @@ type BreakthroughShot = {
   damage: number;
   piercing?: boolean;
   big?: boolean;
+  chargeStage?: CityChargeStage;
+  spread?: boolean;
+  double?: boolean;
 };
 type BreakthroughPowerup = {
   id: number;
@@ -587,6 +590,8 @@ type BreakthroughPowerup = {
   y: number;
   expiresAt: number;
 };
+type BreakthroughUpgradeKind = CityWeaponKind | 'power' | 'charge' | 'speed';
+type BreakthroughUpgradeState = Record<BreakthroughUpgradeKind, number>;
 type BreakthroughPoisonCloud = {
   id: number;
   row: number;
@@ -620,6 +625,19 @@ type BreakthroughNotice = {
   kind: CityNoticeKind | 'win';
   text: string;
 } | null;
+type BreakthroughLevelConfig = {
+  stage: number;
+  title: string;
+  enemyStepRows: number;
+  extraEnemyChance: number;
+  dropChance: number;
+  enemyMoveScale: number;
+  enemyShotScale: number;
+  enemyShotSpeedScale: number;
+  bossHp: number;
+  obstacleDensity: number;
+  musicIntensity: number;
+};
 type RevelationCell = {
   row: number;
   col: number;
@@ -827,6 +845,19 @@ const breakthroughCharacterAbilityText: Record<LightBombCharacterId, string> = {
   doubleBand: '雙發散彈',
   panda: '重裝震波',
 };
+
+const breakthroughUpgradeLabels: Record<BreakthroughUpgradeKind, string> = {
+  rapid: '速射',
+  pierce: '穿透',
+  spread: '散彈',
+  double: '雙發',
+  power: '威力',
+  charge: '集氣',
+  speed: '移速',
+};
+
+const breakthroughUpgradeOrder: BreakthroughUpgradeKind[] = ['rapid', 'pierce', 'spread', 'double', 'power', 'charge', 'speed'];
+const breakthroughMaxUpgradeLevel = 3;
 
 function createLightBombPlayer(characterId: LightBombCharacterId, carry?: LightBombPlayer): LightBombPlayer {
   const character = lightBombCharacterDef(characterId);
@@ -1224,7 +1255,7 @@ const cityEnemySpawnCells = [
   { col: 30, row: 15, dir: 'left' as CityDirection },
 ];
 const breakthroughCols = 11;
-const breakthroughRows = 60;
+const breakthroughRows = 118;
 const breakthroughViewCols = 9;
 const breakthroughViewRows = 15;
 const breakthroughStart = { row: breakthroughRows - 4, col: 5, dir: 'up' as CityDirection };
@@ -1233,6 +1264,12 @@ const breakthroughGoalRow = 1;
 const breakthroughCellSize = 100 / breakthroughCols;
 const breakthroughPoisonDurationMs = 5200;
 const breakthroughPowerupDurationMs = 12000;
+const breakthroughLevels: BreakthroughLevelConfig[] = [
+  { stage: 1, title: '第一海溝', enemyStepRows: 7, extraEnemyChance: 0.36, dropChance: 0.54, enemyMoveScale: 1.08, enemyShotScale: 1.12, enemyShotSpeedScale: 0.92, bossHp: 16, obstacleDensity: 0.9, musicIntensity: 1.08 },
+  { stage: 2, title: '第二海溝', enemyStepRows: 6, extraEnemyChance: 0.52, dropChance: 0.58, enemyMoveScale: 0.92, enemyShotScale: 0.9, enemyShotSpeedScale: 1.05, bossHp: 22, obstacleDensity: 1.04, musicIntensity: 1.24 },
+  { stage: 3, title: '王城外環', enemyStepRows: 5, extraEnemyChance: 0.68, dropChance: 0.62, enemyMoveScale: 0.78, enemyShotScale: 0.76, enemyShotSpeedScale: 1.18, bossHp: 30, obstacleDensity: 1.16, musicIntensity: 1.42 },
+];
+const breakthroughMaxStage = breakthroughLevels.length;
 const cityPowerupWeights: { kind: CityPowerupKind; weight: number }[] = [
   { kind: 'speed', weight: 20 },
   { kind: 'shield', weight: 15 },
@@ -1613,6 +1650,95 @@ function cityWeaponFromPowerup(kind: CityPowerupKind): CityWeaponKind | null {
   if (kind === 'spread') return 'spread';
   if (kind === 'double') return 'double';
   return null;
+}
+
+function breakthroughLevelConfig(stage: number) {
+  return breakthroughLevels[clamp(stage, 1, breakthroughMaxStage) - 1];
+}
+
+function breakthroughEmptyUpgrades(): BreakthroughUpgradeState {
+  return {
+    rapid: 0,
+    pierce: 0,
+    spread: 0,
+    double: 0,
+    power: 0,
+    charge: 0,
+    speed: 0,
+  };
+}
+
+function breakthroughBaseUpgrades(character: LightBombCharacterId): BreakthroughUpgradeState {
+  const upgrades = breakthroughEmptyUpgrades();
+  if (character === 'prince') {
+    upgrades.pierce = 1;
+    upgrades.charge = 1;
+  }
+  if (character === 'panther') {
+    upgrades.rapid = 1;
+    upgrades.speed = 1;
+  }
+  if (character === 'doubleBand') {
+    upgrades.spread = 1;
+    upgrades.double = 1;
+  }
+  if (character === 'panda') {
+    upgrades.power = 1;
+    upgrades.charge = 1;
+  }
+  return upgrades;
+}
+
+function breakthroughUpgradeLevel(current: BreakthroughUpgradeState, kind: BreakthroughUpgradeKind) {
+  return clamp(current[kind] ?? 0, 0, breakthroughMaxUpgradeLevel);
+}
+
+function breakthroughRaiseUpgrade(current: BreakthroughUpgradeState, kind: BreakthroughUpgradeKind) {
+  return {
+    ...current,
+    [kind]: clamp((current[kind] ?? 0) + 1, 0, breakthroughMaxUpgradeLevel),
+  };
+}
+
+function breakthroughUpgradeFromPowerup(kind: CityPowerupKind): BreakthroughUpgradeKind | null {
+  const weapon = cityWeaponFromPowerup(kind);
+  if (weapon) return weapon;
+  if (kind === 'blast') return 'power';
+  if (kind === 'magnet') return 'charge';
+  if (kind === 'dash') return 'speed';
+  return null;
+}
+
+function breakthroughUpgradeSummary(upgrades: BreakthroughUpgradeState) {
+  const active = breakthroughUpgradeOrder
+    .filter((kind) => breakthroughUpgradeLevel(upgrades, kind) > 0)
+    .map((kind) => `${breakthroughUpgradeLabels[kind]}${breakthroughUpgradeLevel(upgrades, kind)}`);
+  return active.length ? active.join(' ') : '初始';
+}
+
+function breakthroughRouteCol(row: number) {
+  return clamp(5 + Math.round(Math.sin(row * 0.22) * 2 + Math.sin(row * 0.07) * 1.3), 2, breakthroughCols - 3);
+}
+
+function breakthroughEffectiveUpgradeLevel(stats: BreakthroughCharacterStats, upgrades: BreakthroughUpgradeState, kind: BreakthroughUpgradeKind) {
+  const innate =
+    (kind === 'pierce' && stats.piercing) ||
+    (kind === 'spread' && stats.spread) ||
+    (kind === 'double' && stats.double) ||
+    (kind === 'power' && stats.big)
+      ? 1
+      : 0;
+  return clamp(Math.max(innate, upgrades[kind] ?? 0), 0, breakthroughMaxUpgradeLevel);
+}
+
+function breakthroughEffectiveMoveMs(stats: BreakthroughCharacterStats, upgrades: BreakthroughUpgradeState) {
+  const speedLevel = breakthroughEffectiveUpgradeLevel(stats, upgrades, 'speed');
+  return Math.max(92, stats.moveMs * (1 - speedLevel * 0.075));
+}
+
+function breakthroughChargeStageForDuration(durationMs: number, chargeLevel: number) {
+  const accelerated = durationMs * (1 + chargeLevel * 0.18);
+  return cityChargeStageForDuration(accelerated);
 }
 
 function directionPadVectorFromDirection(direction: CityDirection): DirectionPadVector {
@@ -2117,7 +2243,7 @@ function breakthroughObstacleBreaks(obstacle?: BreakthroughObstacle) {
   return Boolean(obstacle && obstacle.kind !== 'stone');
 }
 
-function createBreakthroughObstacles(): BreakthroughObstacle[] {
+function createBreakthroughObstacles(config = breakthroughLevelConfig(1)): BreakthroughObstacle[] {
   const obstacles: BreakthroughObstacle[] = [];
   const occupied = new Set<string>();
   const add = (kind: BreakthroughObstacleKind, row: number, col: number) => {
@@ -2131,20 +2257,20 @@ function createBreakthroughObstacles(): BreakthroughObstacle[] {
   };
 
   for (let row = 6; row < breakthroughRows - 5; row += 1) {
-    const route = clamp(5 + Math.round(Math.sin(row * 0.38) * 2), 2, breakthroughCols - 3);
+    const route = breakthroughRouteCol(row);
     for (let col = 1; col < breakthroughCols - 1; col += 1) {
       const nearRoute = Math.abs(col - route) <= 1;
       const difficulty = 1 - row / breakthroughRows;
       const roll = Math.random();
-      if (nearRoute && roll < 0.86) continue;
-      if (roll < 0.1 + difficulty * 0.12) add('stone', row, col);
-      else if (roll < 0.24 + difficulty * 0.15) add(Math.random() < 0.28 ? 'crystal' : 'coral', row, col);
-      else if (roll < 0.32) add('rubble', row, col);
+      if (nearRoute) continue;
+      if (roll < (0.08 + difficulty * 0.1) * config.obstacleDensity) add('stone', row, col);
+      else if (roll < (0.22 + difficulty * 0.14) * config.obstacleDensity) add(Math.random() < 0.28 ? 'crystal' : 'coral', row, col);
+      else if (roll < 0.3 * config.obstacleDensity) add('rubble', row, col);
     }
   }
 
   for (let row = 10; row < breakthroughRows - 8; row += 8) {
-    const gap = randomInt(2, breakthroughCols - 3);
+    const gap = breakthroughRouteCol(row);
     for (let col = 1; col < breakthroughCols - 1; col += 1) {
       if (Math.abs(col - gap) <= 1) continue;
       add(Math.random() < 0.7 ? 'coral' : 'crystal', row, col);
@@ -2164,8 +2290,8 @@ function breakthroughCellBlocked(obstacles: BreakthroughObstacle[], enemies: Bre
   return enemies.some((enemy) => enemy.hp > 0 && Math.round(enemy.y) === row && Math.round(enemy.x) === col);
 }
 
-function createBreakthroughEnemy(id: number, kind: BreakthroughEnemy['kind'], row: number, col: number): BreakthroughEnemy {
-  const maxHp = kind === 'boss' ? 14 : kind === 'anemone' ? 4 : kind === 'urchin' ? 3 : 2;
+function createBreakthroughEnemy(id: number, kind: BreakthroughEnemy['kind'], row: number, col: number, config = breakthroughLevelConfig(1)): BreakthroughEnemy {
+  const maxHp = kind === 'boss' ? config.bossHp : kind === 'anemone' ? 3 + config.stage : kind === 'urchin' ? 2 + config.stage : 1 + config.stage;
   return {
     id,
     kind,
@@ -2176,33 +2302,35 @@ function createBreakthroughEnemy(id: number, kind: BreakthroughEnemy['kind'], ro
     dir: 'down',
     hp: maxHp,
     maxHp,
-    cooldown: kind === 'urchin' ? Number.POSITIVE_INFINITY : 600 + Math.random() * 900,
-    moveAt: performance.now() + 650 + Math.random() * 900,
+    cooldown: kind === 'urchin' ? Number.POSITIVE_INFINITY : (600 + Math.random() * 900) * config.enemyShotScale,
+    moveAt: performance.now() + (650 + Math.random() * 900) * config.enemyMoveScale,
     poisonAt: kind === 'urchin' ? performance.now() + 1100 + Math.random() * 1200 : undefined,
   };
 }
 
-function createBreakthroughEnemies(obstacles: BreakthroughObstacle[]) {
+function createBreakthroughEnemies(obstacles: BreakthroughObstacle[], config = breakthroughLevelConfig(1)) {
   const enemies: BreakthroughEnemy[] = [];
   let id = 1;
   const add = (kind: BreakthroughEnemy['kind'], row: number, col: number) => {
     if (breakthroughObstacleAt(obstacles, row, col)) return;
-    enemies.push(createBreakthroughEnemy(id++, kind, row, col));
+    enemies.push(createBreakthroughEnemy(id++, kind, row, col, config));
   };
 
   add('boss', breakthroughBossStart.row, breakthroughBossStart.col);
-  for (let row = 9; row < breakthroughRows - 8; row += 5) {
+  for (let row = 9; row < breakthroughRows - 8; row += config.enemyStepRows) {
     const sector = row < 22 ? 1 : row < 40 ? 2 : 3;
     add('tank', row, randomInt(2, breakthroughCols - 3));
-    if (sector >= 1 && Math.random() < 0.72) add('anemone', row + 1, randomInt(1, breakthroughCols - 2));
-    if (sector >= 2 && Math.random() < 0.55) add('urchin', row + 2, randomInt(2, breakthroughCols - 3));
-    if (sector >= 3 && Math.random() < 0.66) add('tank', row + 3, randomInt(1, breakthroughCols - 2));
+    if (sector >= 1 && Math.random() < 0.58 + config.extraEnemyChance * 0.35) add('anemone', row + 1, randomInt(1, breakthroughCols - 2));
+    if (sector >= 2 && Math.random() < 0.36 + config.extraEnemyChance * 0.4) add('urchin', row + 2, randomInt(2, breakthroughCols - 3));
+    if (sector >= 3 && Math.random() < config.extraEnemyChance) add('tank', row + 3, randomInt(1, breakthroughCols - 2));
+    if (config.stage >= 3 && Math.random() < 0.42) add('anemone', row + 4, randomInt(1, breakthroughCols - 2));
   }
   return enemies;
 }
 
-function createBreakthroughPlayer(character: LightBombCharacterId): BreakthroughPlayer {
+function createBreakthroughPlayer(character: LightBombCharacterId, carryHp?: number): BreakthroughPlayer {
   const stats = breakthroughCharacterStats[character];
+  const hp = clamp(carryHp ?? stats.hp, 1, stats.hp);
   return {
     character,
     row: breakthroughStart.row,
@@ -2210,7 +2338,7 @@ function createBreakthroughPlayer(character: LightBombCharacterId): Breakthrough
     x: breakthroughStart.col,
     y: breakthroughStart.row,
     dir: breakthroughStart.dir,
-    hp: stats.hp,
+    hp,
     maxHp: stats.hp,
     cooldown: 0,
   };
@@ -6423,9 +6551,15 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
   const diagonalAxisRef = useRef<'horizontal' | 'vertical'>('horizontal');
   const nextMoveAtRef = useRef(0);
   const firePressedRef = useRef(false);
+  const fireChargeStartedAtRef = useRef<number | null>(null);
+  const chargeStageRef = useRef<CityChargeStage | -1>(-1);
   const completionReported = useRef(false);
+  const stageRef = useRef(1);
+  const stageConfigRef = useRef(breakthroughLevelConfig(1));
+  const runScoreRef = useRef(0);
   const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
   const [selectedCharacter, setSelectedCharacter] = useState<LightBombCharacterId>('prince');
+  const [stage, setStage] = useState(1);
   const [status, setStatus] = useState<BreakthroughStatus>('select');
   const [obstacles, setObstacles] = useState<BreakthroughObstacle[]>([]);
   const [enemies, setEnemies] = useState<BreakthroughEnemy[]>([]);
@@ -6436,7 +6570,9 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
   const [player, setPlayer] = useState<BreakthroughPlayer>(() => createBreakthroughPlayer('prince'));
   const [visualPlayer, setVisualPlayer] = useState<BreakthroughPlayer>(() => createBreakthroughPlayer('prince'));
   const [camera, setCamera] = useState(() => breakthroughCameraFor(createBreakthroughPlayer('prince')));
-  const [weaponState, setWeaponState] = useState<CityWeaponState>(cityEmptyWeapons);
+  const [upgradeState, setUpgradeState] = useState<BreakthroughUpgradeState>(() => breakthroughBaseUpgrades('prince'));
+  const [chargeStage, setChargeStage] = useState<CityChargeStage | -1>(-1);
+  const [fireActive, setFireActive] = useState(false);
   const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
   const [padVector, setPadVector] = useState<DirectionPadVector>({ x: 0, y: 0 });
   const [notice, setNotice] = useState<BreakthroughNotice>(null);
@@ -6450,35 +6586,35 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
   const playerRef = useRef<BreakthroughPlayer>(createBreakthroughPlayer('prince'));
   const visualPlayerRef = useRef<BreakthroughPlayer>(createBreakthroughPlayer('prince'));
   const cameraRef = useRef(breakthroughCameraFor(createBreakthroughPlayer('prince')));
-  const weaponStateRef = useRef<CityWeaponState>(cityEmptyWeapons());
+  const upgradeStateRef = useRef<BreakthroughUpgradeState>(breakthroughBaseUpgrades('prince'));
 
   const showNotice = useCallback((kind: CityNoticeKind | 'win', text: string) => {
     noticeId.current += 1;
     setNotice({ id: noticeId.current, kind, text });
   }, []);
 
-  const resetWeapons = useCallback(() => {
-    const empty = cityEmptyWeapons();
-    weaponStateRef.current = empty;
-    setWeaponState(empty);
+  const setBreakthroughUpgrades = useCallback((next: BreakthroughUpgradeState) => {
+    upgradeStateRef.current = next;
+    setUpgradeState(next);
   }, []);
 
-  const activateWeapon = useCallback((weapon: CityWeaponKind) => {
-    const next = { ...weaponStateRef.current, [weapon]: true };
-    weaponStateRef.current = next;
-    setWeaponState(next);
-  }, []);
-
-  const startRun = useCallback((character: LightBombCharacterId) => {
-    const nextObstacles = createBreakthroughObstacles();
-    const nextEnemies = createBreakthroughEnemies(nextObstacles);
-    const nextPlayer = createBreakthroughPlayer(character);
+  const startRun = useCallback((character: LightBombCharacterId, options: { stage?: number; carryUpgrades?: BreakthroughUpgradeState; carryHp?: number; resetScore?: boolean; notice?: string } = {}) => {
+    const nextStage = clamp(options.stage ?? 1, 1, breakthroughMaxStage);
+    const config = breakthroughLevelConfig(nextStage);
+    const nextObstacles = createBreakthroughObstacles(config);
+    const nextEnemies = createBreakthroughEnemies(nextObstacles, config);
+    const nextPlayer = createBreakthroughPlayer(character, options.carryHp);
     const nextCamera = breakthroughCameraFor(nextPlayer);
     nextId.current = 1000;
     totalEnemiesRef.current = nextEnemies.length;
     exitNoticeShownRef.current = false;
     lastTime.current = null;
-    completionReported.current = false;
+    if (options.resetScore ?? nextStage === 1) {
+      runScoreRef.current = 0;
+      completionReported.current = false;
+    }
+    stageRef.current = nextStage;
+    stageConfigRef.current = config;
     statusRef.current = 'playing';
     obstaclesRef.current = nextObstacles;
     enemiesRef.current = nextEnemies;
@@ -6490,11 +6626,17 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
     visualPlayerRef.current = nextPlayer;
     cameraRef.current = nextCamera;
     firePressedRef.current = false;
+    firePointerRef.current = null;
+    movePointerRef.current = null;
+    fireChargeStartedAtRef.current = null;
+    chargeStageRef.current = -1;
     heldDirectionRef.current = null;
     diagonalAxisRef.current = 'horizontal';
     nextMoveAtRef.current = 0;
-    resetWeapons();
+    const nextUpgrades = options.carryUpgrades ?? breakthroughBaseUpgrades(character);
+    setBreakthroughUpgrades(nextUpgrades);
     setSelectedCharacter(character);
+    setStage(nextStage);
     setStatus('playing');
     setObstacles(nextObstacles);
     setEnemies(nextEnemies);
@@ -6505,15 +6647,17 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
     setPlayer(nextPlayer);
     setVisualPlayer(nextPlayer);
     setCamera(nextCamera);
+    setChargeStage(-1);
+    setFireActive(false);
     setPadDirection(null);
     setPadVector({ x: 0, y: 0 });
-    setOceanBgmIntensity(1.16);
-    void startOceanBgm('city', 1.16);
-    showNotice('spawn', '海底突圍開始');
-  }, [resetWeapons, showNotice]);
+    setOceanBgmIntensity(config.musicIntensity);
+    void startOceanBgm('city', config.musicIntensity);
+    showNotice('spawn', options.notice ?? `${config.title}開始`);
+  }, [setBreakthroughUpgrades, showNotice]);
 
   const restart = useCallback(() => {
-    startRun(selectedCharacter);
+    startRun(selectedCharacter, { stage: 1, resetScore: true });
   }, [selectedCharacter, startRun]);
 
   useEffect(() => {
@@ -6583,11 +6727,12 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
       visualPlayerRef.current = { ...visualPlayerRef.current, dir: intent.primary };
     }
     const stats = breakthroughCharacterStats[playerRef.current.character];
+    const moveMs = breakthroughEffectiveMoveMs(stats, upgradeStateRef.current);
     const poisoned = breakthroughInsidePoison(playerRef.current.row, playerRef.current.col, poisonCloudsRef.current, startTime);
     const pace = poisoned ? cityPoisonSlowScale : 1;
     if (!wasHolding) {
       const moved = moveIntent(intent);
-      nextMoveAtRef.current = startTime + (moved ? stats.moveMs / pace : cityTurnRetryMs / pace);
+      nextMoveAtRef.current = startTime + (moved ? moveMs / pace : cityTurnRetryMs / pace);
     } else if (!sameIntent) {
       nextMoveAtRef.current = Math.min(nextMoveAtRef.current, startTime + cityTurnBufferMs / pace);
     }
@@ -6615,6 +6760,10 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
     firePointerRef.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
     firePressedRef.current = true;
+    fireChargeStartedAtRef.current = performance.now();
+    chargeStageRef.current = 0;
+    setChargeStage(0);
+    setFireActive(true);
   }, []);
 
   const releaseFire = useCallback((event?: ReactPointerEvent<HTMLButtonElement>) => {
@@ -6623,6 +6772,10 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
     if (event && firePointerRef.current !== null && event.pointerId !== firePointerRef.current) return;
     firePointerRef.current = null;
     firePressedRef.current = false;
+    fireChargeStartedAtRef.current = null;
+    chargeStageRef.current = -1;
+    setChargeStage(-1);
+    setFireActive(false);
   }, []);
 
   useEffect(() => {
@@ -6650,27 +6803,45 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
       lastTime.current = time;
 
       if (statusRef.current === 'playing') {
-        const currentPlayer = { ...playerRef.current };
+        let currentPlayer = { ...playerRef.current };
+        const stageConfig = stageConfigRef.current;
         const stats = breakthroughCharacterStats[currentPlayer.character];
+        const upgrades = upgradeStateRef.current;
+        const moveMs = breakthroughEffectiveMoveMs(stats, upgrades);
         const playerPoisoned = breakthroughInsidePoison(currentPlayer.row, currentPlayer.col, poisonCloudsRef.current, time);
         const playerPace = playerPoisoned ? cityPoisonSlowScale : 1;
         const heldIntent = heldDirectionRef.current;
         if (heldIntent && time >= nextMoveAtRef.current) {
           const moved = moveIntent(heldIntent);
-          nextMoveAtRef.current = time + (moved ? stats.moveMs / playerPace : cityTurnRetryMs / playerPace);
+          currentPlayer = { ...playerRef.current };
+          nextMoveAtRef.current = time + (moved ? moveMs / playerPace : cityTurnRetryMs / playerPace);
         }
 
         currentPlayer.cooldown -= dt * playerPace;
-        const weapons = weaponStateRef.current;
+        if (firePressedRef.current && fireChargeStartedAtRef.current !== null) {
+          const chargeLevel = breakthroughEffectiveUpgradeLevel(stats, upgrades, 'charge');
+          const nextChargeStage = breakthroughChargeStageForDuration(time - fireChargeStartedAtRef.current, chargeLevel);
+          if (nextChargeStage !== chargeStageRef.current) {
+            chargeStageRef.current = nextChargeStage;
+            setChargeStage(nextChargeStage);
+            if (nextChargeStage > 0) playGameSfx('powerup');
+          }
+        }
         if (firePressedRef.current && currentPlayer.cooldown <= 0) {
           const vector = cityDirectionVector(currentPlayer.dir);
           const side = citySideVector(currentPlayer.dir);
-          const piercing = Boolean(stats.piercing || weapons.pierce);
-          const spread = Boolean(stats.spread || weapons.spread);
-          const double = Boolean(stats.double || weapons.double);
-          const big = Boolean(stats.big);
-          const shotSpeed = stats.shotSpeed * (weapons.rapid ? 1.08 : 1);
-          const makeShot = (sideOffset: number, sideVelocity: number): BreakthroughShot => ({
+          const rapidLevel = breakthroughEffectiveUpgradeLevel(stats, upgrades, 'rapid');
+          const pierceLevel = breakthroughEffectiveUpgradeLevel(stats, upgrades, 'pierce');
+          const spreadLevel = breakthroughEffectiveUpgradeLevel(stats, upgrades, 'spread');
+          const doubleLevel = breakthroughEffectiveUpgradeLevel(stats, upgrades, 'double');
+          const powerLevel = breakthroughEffectiveUpgradeLevel(stats, upgrades, 'power');
+          const chargeToFire: CityChargeStage | undefined = chargeStageRef.current > 0 ? chargeStageRef.current as CityChargeStage : undefined;
+          const charged = chargeToFire !== undefined;
+          const piercing = pierceLevel > 0 || charged;
+          const big = Boolean(stats.big || powerLevel >= 3 || chargeToFire === 2);
+          const shotSpeed = stats.shotSpeed * (1 + rapidLevel * 0.075 + (charged ? 0.05 : 0));
+          const damage = stats.damage + Math.floor((powerLevel + 1) / 2) + (chargeToFire ?? 0);
+          const makeShot = (sideOffset: number, sideVelocity: number, tags: Pick<BreakthroughShot, 'spread' | 'double'> = {}): BreakthroughShot => ({
             id: nextId.current++,
             side: 'ally',
             x: currentPlayer.x + vector.x * 0.58 + side.x * sideOffset,
@@ -6678,16 +6849,30 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
             vx: vector.x * shotSpeed + side.x * sideVelocity,
             vy: vector.y * shotSpeed + side.y * sideVelocity,
             dir: currentPlayer.dir,
-            damage: stats.damage,
+            damage,
             piercing,
             big,
+            chargeStage: chargeToFire,
+            ...tags,
           });
           const nextShots = [makeShot(0, 0)];
-          if (double) nextShots.push(makeShot(0.25, 0), makeShot(-0.25, 0));
-          if (spread) nextShots.push(makeShot(0, 0.0065), makeShot(0, -0.0065));
-          shotsRef.current = [...shotsRef.current, ...nextShots].slice(-48);
-          currentPlayer.cooldown = (weapons.rapid ? stats.cooldownMs * 0.68 : stats.cooldownMs) + (spread ? 60 : 0) + (double ? 40 : 0);
-          playGameSfx(big ? 'blast' : 'shoot');
+          if (!charged && doubleLevel >= 1) nextShots.push(makeShot(0.25, 0, { double: true }), makeShot(-0.25, 0, { double: true }));
+          if (!charged && doubleLevel >= 3) nextShots.push(makeShot(0.48, 0, { double: true }), makeShot(-0.48, 0, { double: true }));
+          if (!charged && spreadLevel >= 1) {
+            const spreadSpeed = 0.0048 + spreadLevel * 0.0014;
+            nextShots.push(makeShot(0, spreadSpeed, { spread: true }), makeShot(0, -spreadSpeed, { spread: true }));
+            if (spreadLevel >= 3) nextShots.push(makeShot(0.18, spreadSpeed * 1.28, { spread: true }), makeShot(-0.18, -spreadSpeed * 1.28, { spread: true }));
+          }
+          shotsRef.current = [...shotsRef.current, ...nextShots].slice(-72);
+          currentPlayer.cooldown = charged
+            ? (chargeToFire === 2 ? 860 : 680) * (1 - rapidLevel * 0.05)
+            : stats.cooldownMs * (1 - rapidLevel * 0.16) + spreadLevel * 28 + doubleLevel * 28;
+          if (charged) {
+            fireChargeStartedAtRef.current = time;
+            chargeStageRef.current = 0;
+            setChargeStage(0);
+          }
+          playGameSfx(charged || big ? 'blast' : 'shoot');
         }
 
         let nextObstacles = obstaclesRef.current;
@@ -6719,7 +6904,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
                 break;
               }
             }
-            nextEnemy.moveAt = time + (nextEnemy.kind === 'urchin' ? 820 + Math.random() * 460 : 980 + Math.random() * 620);
+            nextEnemy.moveAt = time + (nextEnemy.kind === 'urchin' ? 820 + Math.random() * 460 : 980 + Math.random() * 620) * stageConfig.enemyMoveScale;
           }
           if (nextEnemy.kind === 'urchin' && (nextEnemy.poisonAt ?? 0) <= time) {
             nextPoison = [...nextPoison, {
@@ -6735,7 +6920,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
             if (nextEnemy.cooldown <= 0) {
               nextEnemy.dir = cityDirectionToward(nextEnemy, currentPlayer);
               const vector = cityDirectionVector(nextEnemy.dir);
-              const speed = nextEnemy.kind === 'boss' ? 0.011 : nextEnemy.kind === 'anemone' ? 0.01 : 0.009;
+              const speed = (nextEnemy.kind === 'boss' ? 0.011 : nextEnemy.kind === 'anemone' ? 0.01 : 0.009) * stageConfig.enemyShotSpeedScale;
               enemyShots.push({
                 id: nextId.current++,
                 side: 'enemy',
@@ -6747,7 +6932,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
                 damage: nextEnemy.kind === 'boss' ? 2 : 1,
                 big: nextEnemy.kind === 'boss',
               });
-              nextEnemy.cooldown = nextEnemy.kind === 'boss' ? 940 + Math.random() * 520 : 1350 + Math.random() * 850;
+              nextEnemy.cooldown = (nextEnemy.kind === 'boss' ? 940 + Math.random() * 520 : 1350 + Math.random() * 850) * stageConfig.enemyShotScale;
             }
           }
           return nextEnemy;
@@ -6780,8 +6965,9 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
             if (target) {
               target.hp -= shot.damage;
               if (target.hp <= 0) {
+                runScoreRef.current += target.kind === 'boss' ? 720 : target.kind === 'anemone' ? 120 : target.kind === 'urchin' ? 130 : 95;
                 playGameSfx(target.kind === 'boss' ? 'level' : 'blast');
-                if (target.kind !== 'boss' && Math.random() < 0.48) {
+                if (target.kind !== 'boss' && Math.random() < stageConfig.dropChance) {
                   nextPowerups = [...nextPowerups, {
                     id: nextId.current++,
                     kind: randomCityPowerupKind(),
@@ -6808,22 +6994,34 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
         nextEnemies = nextEnemies.filter((enemy) => enemy.hp > 0);
         nextPowerups = nextPowerups.filter((powerup) => {
           if (Math.hypot(powerup.x - currentPlayer.x, powerup.y - currentPlayer.y) > 0.8) return true;
-          const weapon = cityWeaponFromPowerup(powerup.kind);
-          if (weapon) {
-            activateWeapon(weapon);
+          const upgrade = breakthroughUpgradeFromPowerup(powerup.kind);
+          if (upgrade) {
+            const nextUpgradeState = breakthroughRaiseUpgrade(upgradeStateRef.current, upgrade);
+            setBreakthroughUpgrades(nextUpgradeState);
+            showNotice(powerup.kind, `${breakthroughUpgradeLabels[upgrade]} LV${nextUpgradeState[upgrade]}`);
           } else if (powerup.kind === 'armor' || powerup.kind === 'repair') {
             nextHp = Math.min(currentPlayer.maxHp, nextHp + 1);
+            showNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           } else if (powerup.kind === 'blast') {
             nextEnemies = nextEnemies
               .map((enemy) => ({ ...enemy, hp: enemy.hp - (enemy.kind === 'boss' ? 2 : 1) }))
               .filter((enemy) => enemy.hp > 0);
+            showNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           } else if (powerup.kind === 'freeze') {
             nextEnemies = nextEnemies.map((enemy) => ({ ...enemy, moveAt: enemy.moveAt + 1800, cooldown: enemy.cooldown + 1200 }));
+            showNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           } else if (powerup.kind === 'shield') {
             nextHp = Math.min(currentPlayer.maxHp, nextHp + 2);
+            showNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
+          } else if (powerup.kind === 'jam') {
+            nextEnemies = nextEnemies.map((enemy) => ({ ...enemy, cooldown: enemy.cooldown + 1800 }));
+            showNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
+          } else if (powerup.kind === 'fortify') {
+            nextHp = Math.min(currentPlayer.maxHp, nextHp + 1);
+            showNotice(powerup.kind, '防線回復');
           }
+          runScoreRef.current += 40;
           playGameSfx('powerup');
-          showNotice(powerup.kind, cityPowerupMessages[powerup.kind]);
           return false;
         });
 
@@ -6834,7 +7032,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
         shotsRef.current = resolvedShots.slice(-56);
         powerupsRef.current = nextPowerups;
         poisonCloudsRef.current = nextPoison;
-        const nextVisualPlayer = breakthroughSmoothCell(visualPlayerRef.current, currentPlayer, dt, stats.moveMs);
+        const nextVisualPlayer = breakthroughSmoothCell(visualPlayerRef.current, currentPlayer, dt, moveMs);
         const visualEnemyLookup = new Map(visualEnemiesRef.current.map((enemy) => [enemy.id, enemy]));
         const nextVisualEnemies = nextEnemies.map((enemy) => breakthroughSmoothCell(visualEnemyLookup.get(enemy.id), enemy, dt, 170));
         const targetCamera = breakthroughCameraFor(nextVisualPlayer);
@@ -6859,16 +7057,27 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
         if (nextHp <= 0) {
           statusRef.current = 'lost';
           setStatus('lost');
-          resetWeapons();
+          setBreakthroughUpgrades(breakthroughBaseUpgrades(currentPlayer.character));
           showNotice('damage', '突圍失敗，武裝失效');
         } else if (!bossAlive && currentPlayer.row <= breakthroughGoalRow) {
-          statusRef.current = 'won';
-          setStatus('won');
-          showNotice('win', '海底通路突破');
-          if (!completionReported.current) {
-            completionReported.current = true;
-            const defeated = totalEnemiesRef.current - nextEnemies.length;
-            onComplete(2200 + defeated * 72 + currentPlayer.hp * 180 + Object.values(weaponStateRef.current).filter(Boolean).length * 220);
+          if (stageRef.current < breakthroughMaxStage) {
+            const nextStage = stageRef.current + 1;
+            const nextConfig = breakthroughLevelConfig(nextStage);
+            startRun(currentPlayer.character, {
+              stage: nextStage,
+              carryUpgrades: upgradeStateRef.current,
+              carryHp: Math.min(currentPlayer.maxHp, currentPlayer.hp + 1),
+              notice: `${nextConfig.title}展開`,
+            });
+          } else {
+            statusRef.current = 'won';
+            setStatus('won');
+            showNotice('win', '海底通路突破');
+            if (!completionReported.current) {
+              completionReported.current = true;
+              const upgradeScore = Object.values(upgradeStateRef.current).reduce((sum, level) => sum + level, 0) * 150;
+              onComplete(2600 + runScoreRef.current + currentPlayer.hp * 220 + upgradeScore);
+            }
           }
         } else if (!bossAlive && currentPlayer.row <= 5 && !exitNoticeShownRef.current) {
           exitNoticeShownRef.current = true;
@@ -6882,7 +7091,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [activateWeapon, moveIntent, onComplete, resetWeapons, showNotice]);
+  }, [moveIntent, onComplete, setBreakthroughUpgrades, showNotice, startRun]);
 
   const cellPx = Math.max(20, Math.min((arenaSize.width || 360) / breakthroughViewCols, (arenaSize.height || 540) / breakthroughViewRows));
   const viewportStyle: CSSProperties = {
@@ -6901,7 +7110,10 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
   const bossAlive = enemies.some((enemy) => enemy.kind === 'boss');
   const selectedDef = lightBombCharacterDef(selectedCharacter);
   const selectedStats = breakthroughCharacterStats[selectedCharacter];
+  const currentConfig = breakthroughLevelConfig(stage);
   const playerPoisoned = breakthroughInsidePoison(player.row, player.col, poisonClouds, performance.now());
+  const upgradeSummary = breakthroughUpgradeSummary(upgradeState);
+  const chargeLabel = chargeStage === 2 ? '二段' : chargeStage === 1 ? '一段' : fireActive ? '連射' : '射擊';
   const padStyle: CSSProperties = {
     ['--pad-x' as string]: `${padVector.x}px`,
     ['--pad-y' as string]: `${padVector.y}px`,
@@ -6912,6 +7124,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
     { label: 'intent', value: directionPadIntentLabel(heldDirectionRef.current) },
     { label: 'shots', value: shots.length },
     { label: 'enemies', value: enemies.length },
+    { label: 'upgrade', value: upgradeSummary },
   ];
 
   if (status === 'select') {
@@ -6940,7 +7153,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
           <div className="breakthrough-selected">
             <img src={selectedDef.image} alt="" />
             <span>{selectedDef.name}</span>
-            <small>體力 {selectedStats.hp} · {breakthroughCharacterAbilityText[selectedCharacter]}</small>
+            <small>體力 {selectedStats.hp} · {breakthroughCharacterAbilityText[selectedCharacter]} · {breakthroughUpgradeSummary(breakthroughBaseUpgrades(selectedCharacter))}</small>
           </div>
           <button className="primary-action" onClick={() => startRun(selectedCharacter)}>開始突圍</button>
         </div>
@@ -6979,18 +7192,23 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
                 <i style={{ width: `${clamp(enemy.hp / enemy.maxHp, 0, 1) * 100}%` }} />
               </div>
             ))}
-            <div className={`breakthrough-player ${visualPlayer.character} dir-${visualPlayer.dir} ${playerPoisoned ? 'poisoned' : ''} ${Object.entries(weaponState).filter(([, active]) => active).map(([weapon]) => `weapon-${weapon}`).join(' ')}`} style={tokenStyle(visualPlayer.x, visualPlayer.y)}>
+            <div className={`breakthrough-player ${visualPlayer.character} dir-${visualPlayer.dir} ${playerPoisoned ? 'poisoned' : ''} ${fireActive ? `charging charge-${Math.max(0, chargeStage)}` : ''} ${Object.entries(upgradeState).filter(([, level]) => level > 0).map(([upgrade]) => `weapon-${upgrade}`).join(' ')}`} style={tokenStyle(visualPlayer.x, visualPlayer.y)}>
               <img src={lightBombCharacterDef(visualPlayer.character).image} alt="" />
             </div>
             {shots.map((shot) => (
-              <span className={`breakthrough-shot ${shot.side} dir-${shot.dir} ${shot.big ? 'big' : ''} ${shot.piercing ? 'piercing' : ''}`} key={shot.id} style={tokenStyle(shot.x, shot.y)} />
+              <span className={`breakthrough-shot ${shot.side} dir-${shot.dir} ${shot.big ? 'big' : ''} ${shot.piercing ? 'piercing' : ''} ${shot.spread ? 'spread' : ''} ${shot.double ? 'double' : ''} ${shot.chargeStage ? `charged charge-${shot.chargeStage}` : ''}`} key={shot.id} style={tokenStyle(shot.x, shot.y)} />
             ))}
           </div>
           <div className="breakthrough-hud">
-            <span>{lightBombCharacterDef(player.character).name}</span>
+            <span>{currentConfig.title}</span>
             <span>體力 {player.hp}/{player.maxHp}</span>
             <span>高度 {Math.max(0, breakthroughStart.row - player.row)}</span>
             <span>{bossAlive ? '守門未破' : '出口開啟'}</span>
+          </div>
+          <div className="breakthrough-upgrades">
+            <span>{lightBombCharacterDef(player.character).name}</span>
+            <span>{upgradeSummary}</span>
+            <span>{chargeLabel}</span>
           </div>
           {debugGrid && <GridDebugOverlay title="BREAKTHROUGH" items={debugItems} />}
           {notice && <div className={`city-notice ${notice.kind}`} key={notice.id}>{notice.text}</div>}
@@ -7018,7 +7236,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
             <span className="city-stick" style={padStyle} />
           </div>
           <button
-            className="city-fire-control breakthrough-fire-control"
+            className={`city-fire-control breakthrough-fire-control ${fireActive ? `charging charge-${Math.max(0, chargeStage)}` : ''}`}
             onPointerDown={pressFire}
             onPointerUp={releaseFire}
             onPointerCancel={releaseFire}
@@ -7026,7 +7244,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
             aria-label="海光射擊"
           >
             <Zap size={22} />
-            <small>射擊</small>
+            <small>{chargeLabel}</small>
           </button>
           {status !== 'playing' && (
             <div className="city-result breakthrough-result">
