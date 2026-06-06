@@ -64,17 +64,17 @@ const sceneShortHints: Record<PlayableScene, string> = {
   revelation: '天蠶變',
 };
 const sceneVersions: Record<PlayableScene, string> = {
-  combat: 'v1.4',
-  memory: 'v1.2',
-  breakout: 'v1.6',
-  minefield: 'v1.2',
-  snowfield: 'v1.5',
-  snake: 'v2.0',
-  tower: 'v1.3',
-  city: 'v2.4',
-  breakthrough: 'v1.5',
-  lightbomb: 'v2.1',
-  revelation: 'v1.5',
+  combat: 'v1.5',
+  memory: 'v1.3',
+  breakout: 'v1.7',
+  minefield: 'v1.3',
+  snowfield: 'v1.6',
+  snake: 'v2.1',
+  tower: 'v1.4',
+  city: 'v2.5',
+  breakthrough: 'v1.6',
+  lightbomb: 'v2.2',
+  revelation: 'v1.6',
 };
 const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
   combat: [900, 1300, 1500],
@@ -166,12 +166,19 @@ function isPlayableScreen(screen: Screen): screen is PlayableScene {
 }
 
 const globalPauseEventName = 'ocean-chronicle-pause';
+const globalControlsResetEventName = 'ocean-chronicle-controls-reset';
 let globalGamePaused = false;
 
 function setGlobalGamePaused(paused: boolean) {
   globalGamePaused = paused;
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(globalPauseEventName, { detail: paused }));
+  }
+}
+
+function resetGlobalGameControls(reason = 'manual') {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(globalControlsResetEventName, { detail: reason }));
   }
 }
 
@@ -185,6 +192,18 @@ function useGamePausedRef() {
     return () => window.removeEventListener(globalPauseEventName, syncPaused);
   }, []);
   return pausedRef;
+}
+
+function useGlobalControlReset(callback: () => void) {
+  const callbackRef = useRef(callback);
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+  useEffect(() => {
+    const handleReset = () => callbackRef.current();
+    window.addEventListener(globalControlsResetEventName, handleReset);
+    return () => window.removeEventListener(globalControlsResetEventName, handleReset);
+  }, []);
 }
 
 function completionStatusLabel(status: CompletionNotice['status']) {
@@ -3145,6 +3164,10 @@ export default function App() {
   }, [screen]);
 
   useEffect(() => {
+    resetGlobalGameControls(settingsOpen ? 'settings-open' : 'screen-change');
+  }, [screen, screenResetKey, settingsOpen]);
+
+  useEffect(() => {
     setGlobalGamePaused(settingsOpen && isPlayableScreen(screen));
     return () => setGlobalGamePaused(false);
   }, [screen, settingsOpen]);
@@ -3156,26 +3179,35 @@ export default function App() {
   }, [completionNotice]);
 
   useEffect(() => {
-    const stopOnHide = () => {
-      if (document.visibilityState === 'hidden') stopOceanBgm();
+    const clearControlsAndAudio = () => {
+      resetGlobalGameControls('window-interrupt');
+      stopOceanBgm();
     };
-    window.addEventListener('pagehide', stopOceanBgm);
-    window.addEventListener('beforeunload', stopOceanBgm);
+    const clearControlsOnBlur = () => resetGlobalGameControls('window-blur');
+    const stopOnHide = () => {
+      if (document.visibilityState === 'hidden') clearControlsAndAudio();
+    };
+    window.addEventListener('blur', clearControlsOnBlur);
+    window.addEventListener('pagehide', clearControlsAndAudio);
+    window.addEventListener('beforeunload', clearControlsAndAudio);
     document.addEventListener('visibilitychange', stopOnHide);
     return () => {
-      window.removeEventListener('pagehide', stopOceanBgm);
-      window.removeEventListener('beforeunload', stopOceanBgm);
+      window.removeEventListener('blur', clearControlsOnBlur);
+      window.removeEventListener('pagehide', clearControlsAndAudio);
+      window.removeEventListener('beforeunload', clearControlsAndAudio);
       document.removeEventListener('visibilitychange', stopOnHide);
       stopOceanBgm();
     };
   }, []);
 
   const showTitle = useCallback(() => {
+    resetGlobalGameControls('show-title');
     stopOceanBgm();
     setScreen('title');
   }, []);
 
   const showMap = useCallback(() => {
+    resetGlobalGameControls('show-map');
     stopOceanBgm();
     setScreen('map');
   }, []);
@@ -3194,18 +3226,21 @@ export default function App() {
 
   const restartCurrentScreen = useCallback(() => {
     if (!isPlayableScreen(screen)) return;
+    resetGlobalGameControls('restart');
     playGameSfx('select');
     setScreenResetKey((value) => value + 1);
     setSettingsOpen(false);
   }, [screen]);
 
   const returnFromVideoLeadIn = useCallback(() => {
+    resetGlobalGameControls('video-back');
     stopOceanBgm();
     playGameSfx('select');
     setScreen(videoBackTarget);
   }, [videoBackTarget]);
 
   const openVideoLeadIn = (leadIn: VideoLeadInConfig, backTarget: VideoBackTarget = 'map') => {
+    resetGlobalGameControls('open-video');
     stopOceanBgm();
     setVideoLeadIn(leadIn);
     setVideoBackTarget(backTarget);
@@ -3218,10 +3253,12 @@ export default function App() {
     openVideoLeadIn(videoLeadIns.startGame, 'title');
   };
   const startCombat = () => {
+    resetGlobalGameControls('start-combat');
     void startOceanBgm();
     setScreen('combat');
   };
   const completeVideoLeadIn = () => {
+    resetGlobalGameControls('video-complete');
     if (videoLeadIn.destination === 'map') {
       void startOceanBgm();
       setScreen('map');
@@ -4420,6 +4457,8 @@ function MinefieldGame({ onBack, onComplete }: { onBack: () => void; onComplete:
     longPressTimer.current = null;
   }, []);
 
+  useGlobalControlReset(clearMineLongPress);
+
   useEffect(
     () => () => {
       if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
@@ -4584,6 +4623,17 @@ function SnowfieldGame({ onBack, onComplete }: { onBack: () => void; onComplete:
     unitsRef.current = unitsRef.current.map((unit) => (unit.id === id ? { ...unit, dragging: false } : unit));
     setUnits(unitsRef.current);
   }, []);
+
+  useGlobalControlReset(stopDrag);
+
+  useEffect(() => {
+    window.addEventListener('pointerup', stopDrag);
+    window.addEventListener('pointercancel', stopDrag);
+    return () => {
+      window.removeEventListener('pointerup', stopDrag);
+      window.removeEventListener('pointercancel', stopDrag);
+    };
+  }, [stopDrag]);
 
   useEffect(() => {
     const tick = (time: number) => {
@@ -5278,6 +5328,8 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
     setPadVector({ x: 0, y: 0 });
   }, []);
 
+  useGlobalControlReset(releaseSnakePad);
+
   useEffect(() => {
     const releaseMatchingPad = (event: PointerEvent) => {
       if (movePointerRef.current === event.pointerId) releaseSnakePad();
@@ -5599,6 +5651,23 @@ function AbyssTowerGame({ onBack, onComplete }: { onBack: () => void; onComplete
     const currentX = playerRef.current.x;
     targetXRef.current = clamp(requestedX, currentX - 45, currentX + 45);
   }, [startPlaying]);
+
+  const clearTowerControls = useCallback(() => {
+    draggingRef.current = false;
+    keysRef.current = { left: false, right: false };
+    targetXRef.current = playerRef.current.x;
+  }, []);
+
+  useGlobalControlReset(clearTowerControls);
+
+  useEffect(() => {
+    window.addEventListener('pointerup', clearTowerControls);
+    window.addEventListener('pointercancel', clearTowerControls);
+    return () => {
+      window.removeEventListener('pointerup', clearTowerControls);
+      window.removeEventListener('pointercancel', clearTowerControls);
+    };
+  }, [clearTowerControls]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -6290,25 +6359,38 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
     setFirePressed(false, { releaseShot });
   }, [setFirePressed]);
 
+  const clearCityControls = useCallback(() => {
+    releaseMovePad();
+    releaseCityFire(undefined, false);
+  }, [releaseCityFire, releaseMovePad]);
+
+  useGlobalControlReset(clearCityControls);
+
   useEffect(() => {
     const releaseMatchingMove = (event: PointerEvent) => {
       if (movePointerRef.current === event.pointerId) releaseMovePad();
     };
-    const clearControls = () => {
-      releaseMovePad();
-      releaseCityFire(undefined, false);
+    const releaseMatchingFire = (event: PointerEvent) => {
+      if (firePointerRef.current === event.pointerId) releaseCityFire();
+    };
+    const cancelMatchingFire = (event: PointerEvent) => {
+      if (firePointerRef.current === event.pointerId) releaseCityFire(undefined, false);
     };
     window.addEventListener('pointerup', releaseMatchingMove);
+    window.addEventListener('pointerup', releaseMatchingFire);
     window.addEventListener('pointercancel', releaseMatchingMove);
-    window.addEventListener('blur', clearControls);
-    window.addEventListener('pagehide', clearControls);
+    window.addEventListener('pointercancel', cancelMatchingFire);
+    window.addEventListener('blur', clearCityControls);
+    window.addEventListener('pagehide', clearCityControls);
     return () => {
       window.removeEventListener('pointerup', releaseMatchingMove);
+      window.removeEventListener('pointerup', releaseMatchingFire);
       window.removeEventListener('pointercancel', releaseMatchingMove);
-      window.removeEventListener('blur', clearControls);
-      window.removeEventListener('pagehide', clearControls);
+      window.removeEventListener('pointercancel', cancelMatchingFire);
+      window.removeEventListener('blur', clearCityControls);
+      window.removeEventListener('pagehide', clearCityControls);
     };
-  }, [releaseCityFire, releaseMovePad]);
+  }, [clearCityControls, releaseCityFire, releaseMovePad]);
 
   useEffect(() => {
     const directionFromKey = (event: KeyboardEvent): CityDirection | null => {
@@ -6907,8 +6989,8 @@ function UnderseaCityGame({ debugGrid, onBack, onComplete }: { debugGrid: boolea
             className={`city-fire-control ${chargeStage >= 0 ? `charging charge-${chargeStage}` : ''}`}
             onPointerDown={pressCityFire}
             onPointerUp={releaseCityFire}
-            onPointerCancel={releaseCityFire}
-            onPointerLeave={releaseCityFire}
+            onPointerCancel={(event) => releaseCityFire(event, false)}
+            onPointerLeave={(event) => releaseCityFire(event, false)}
             aria-label="攻擊"
           >
             <Swords size={24} />
@@ -7186,18 +7268,38 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
     setFireActive(false);
   }, []);
 
-  useEffect(() => {
-    const clearControls = () => {
-      releaseMovePad();
-      releaseFire(undefined, false);
-    };
-    window.addEventListener('blur', clearControls);
-    window.addEventListener('pagehide', clearControls);
-    return () => {
-      window.removeEventListener('blur', clearControls);
-      window.removeEventListener('pagehide', clearControls);
-    };
+  const clearBreakthroughControls = useCallback(() => {
+    releaseMovePad();
+    releaseFire(undefined, false);
   }, [releaseFire, releaseMovePad]);
+
+  useGlobalControlReset(clearBreakthroughControls);
+
+  useEffect(() => {
+    const releaseMatchingMove = (event: PointerEvent) => {
+      if (movePointerRef.current === event.pointerId) releaseMovePad();
+    };
+    const releaseMatchingFire = (event: PointerEvent) => {
+      if (firePointerRef.current === event.pointerId) releaseFire();
+    };
+    const cancelMatchingFire = (event: PointerEvent) => {
+      if (firePointerRef.current === event.pointerId) releaseFire(undefined, false);
+    };
+    window.addEventListener('pointerup', releaseMatchingMove);
+    window.addEventListener('pointerup', releaseMatchingFire);
+    window.addEventListener('pointercancel', releaseMatchingMove);
+    window.addEventListener('pointercancel', cancelMatchingFire);
+    window.addEventListener('blur', clearBreakthroughControls);
+    window.addEventListener('pagehide', clearBreakthroughControls);
+    return () => {
+      window.removeEventListener('pointerup', releaseMatchingMove);
+      window.removeEventListener('pointerup', releaseMatchingFire);
+      window.removeEventListener('pointercancel', releaseMatchingMove);
+      window.removeEventListener('pointercancel', cancelMatchingFire);
+      window.removeEventListener('blur', clearBreakthroughControls);
+      window.removeEventListener('pagehide', clearBreakthroughControls);
+    };
+  }, [clearBreakthroughControls, releaseFire, releaseMovePad]);
 
   useEffect(() => {
     const tick = (time: number) => {
@@ -7717,6 +7819,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
             onPointerDown={pressFire}
             onPointerUp={releaseFire}
             onPointerCancel={(event) => releaseFire(event, false)}
+            onPointerLeave={(event) => releaseFire(event, false)}
             aria-label="海光射擊"
           >
             <Zap size={22} />
@@ -8032,6 +8135,8 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
     movePointerRef.current = null;
     holdDirection(null);
   }, [holdDirection]);
+
+  useGlobalControlReset(releasePad);
 
   const pressBombAction = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -8935,6 +9040,8 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     setPadVector({ x: 0, y: 0 });
   }, []);
 
+  useGlobalControlReset(releasePad);
+
   useEffect(() => {
     const releaseMatchingPad = (event: PointerEvent) => {
       if (movePointerRef.current === event.pointerId) releasePad();
@@ -9184,16 +9291,37 @@ function VideoLeadIn({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
+  const stopVideoPlayback = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+    video.currentTime = 0;
+  }, []);
+
+  const handleBack = useCallback(() => {
+    stopVideoPlayback();
+    onBack();
+  }, [onBack, stopVideoPlayback]);
+
+  const handleComplete = useCallback(() => {
+    stopVideoPlayback();
+    onComplete();
+  }, [onComplete, stopVideoPlayback]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     video.currentTime = 0;
     void video.play().catch(() => undefined);
+    return () => {
+      video.pause();
+      video.currentTime = 0;
+    };
   }, [leadIn.src]);
 
   return (
     <section className="screen video-screen">
-      <button className="icon-button video-back-button" onClick={onBack} aria-label={backLabel}>
+      <button className="icon-button video-back-button" onClick={handleBack} aria-label={backLabel}>
         <ChevronLeft size={21} />
       </button>
       <div className="video-copy">
@@ -9207,14 +9335,14 @@ function VideoLeadIn({
         playsInline
         controls
         preload="metadata"
-        onEnded={onComplete}
+        onEnded={handleComplete}
       />
       <div className="video-actions">
         <button onClick={() => videoRef.current?.play()}>
           <Play size={18} />
           看影片
         </button>
-        <button className="primary-action" onClick={onComplete}>
+        <button className="primary-action" onClick={handleComplete}>
           {leadIn.actionLabel}
         </button>
       </div>
@@ -9318,6 +9446,12 @@ function CombatStage({ onVictory, onExit }: { onVictory: () => void; onExit: () 
     playerRef.current = next;
     setPlayer(next);
   }, [cutin, defeated]);
+
+  const clearCombatControls = useCallback(() => {
+    keysRef.current = { left: false, right: false, up: false, down: false };
+  }, []);
+
+  useGlobalControlReset(clearCombatControls);
 
   const flashBossHit = useCallback(() => {
     setHitFlash(true);

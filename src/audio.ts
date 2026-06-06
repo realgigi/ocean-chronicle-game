@@ -119,6 +119,11 @@ function startPad() {
 function stopBgmPlayback(suspend: boolean) {
   bgmTimers.forEach((timer) => window.clearInterval(timer));
   bgmTimers = [];
+  if (audioContext && masterGain) {
+    const now = audioContext.currentTime;
+    masterGain.gain.cancelScheduledValues(now);
+    masterGain.gain.setValueAtTime(0, now);
+  }
   padOscillators.forEach((oscillator) => {
     try {
       oscillator.stop();
