@@ -4464,10 +4464,11 @@ button:disabled {
 .breakthrough-viewport::before {
   z-index: 17;
   background:
-    repeating-linear-gradient(172deg, transparent 0 34px, rgba(118, 237, 248, 0.07) 35px 38px, transparent 39px 92px),
-    linear-gradient(180deg, rgba(255, 246, 176, 0.08), transparent 28%, rgba(20, 8, 36, 0.14));
+    radial-gradient(ellipse at 38% 8%, rgba(255, 245, 178, 0.12), transparent 34%),
+    radial-gradient(ellipse at 72% 46%, rgba(119, 237, 248, 0.08), transparent 28%),
+    linear-gradient(116deg, transparent 0 24%, rgba(109, 232, 244, 0.045) 25% 29%, transparent 30% 62%, rgba(255, 222, 113, 0.035) 63% 67%, transparent 68%),
+    linear-gradient(180deg, rgba(255, 246, 176, 0.055), transparent 34%, rgba(20, 8, 36, 0.14));
   mix-blend-mode: screen;
-  animation: breakthroughCurrentDrift 7.5s linear infinite;
 }
 
 .breakthrough-viewport::after {
@@ -4987,16 +4988,6 @@ button:disabled {
   to {
     transform: scale(1.08);
     opacity: 1;
-  }
-}
-
-@keyframes breakthroughCurrentDrift {
-  from {
-    transform: translate3d(0, -4%, 0);
-  }
-
-  to {
-    transform: translate3d(0, 4%, 0);
   }
 }
 
