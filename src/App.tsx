@@ -575,6 +575,7 @@ type BreakthroughShot = {
   vy: number;
   dir: CityDirection;
   damage: number;
+  rangeLeft: number;
   piercing?: boolean;
   big?: boolean;
   chargeStage?: CityChargeStage;
@@ -754,6 +755,32 @@ const assets = {
     urchin: assetUrl('/assets/mobile/lightbomb/urchin-head-v01.png?v=20260601'),
     anemone: assetUrl('/assets/mobile/lightbomb/anemone-head-v01.png?v=20260601'),
   } satisfies Record<LightBombCharacterId | LightBombEnemyKind, string>,
+  breakthroughHeroes: {
+    prince: {
+      up: assetUrl('/assets/mobile/breakthrough-heroes/prince-up-v01.png?v=20260606'),
+      down: assetUrl('/assets/mobile/breakthrough-heroes/prince-down-v01.png?v=20260606'),
+      left: assetUrl('/assets/mobile/breakthrough-heroes/prince-left-v01.png?v=20260606'),
+      right: assetUrl('/assets/mobile/breakthrough-heroes/prince-right-v01.png?v=20260606'),
+    },
+    panther: {
+      up: assetUrl('/assets/mobile/breakthrough-heroes/panther-up-v01.png?v=20260606'),
+      down: assetUrl('/assets/mobile/breakthrough-heroes/panther-down-v01.png?v=20260606'),
+      left: assetUrl('/assets/mobile/breakthrough-heroes/panther-left-v01.png?v=20260606'),
+      right: assetUrl('/assets/mobile/breakthrough-heroes/panther-right-v01.png?v=20260606'),
+    },
+    doubleBand: {
+      up: assetUrl('/assets/mobile/breakthrough-heroes/doubleBand-up-v01.png?v=20260606'),
+      down: assetUrl('/assets/mobile/breakthrough-heroes/doubleBand-down-v01.png?v=20260606'),
+      left: assetUrl('/assets/mobile/breakthrough-heroes/doubleBand-left-v01.png?v=20260606'),
+      right: assetUrl('/assets/mobile/breakthrough-heroes/doubleBand-right-v01.png?v=20260606'),
+    },
+    panda: {
+      up: assetUrl('/assets/mobile/breakthrough-heroes/panda-up-v01.png?v=20260606'),
+      down: assetUrl('/assets/mobile/breakthrough-heroes/panda-down-v01.png?v=20260606'),
+      left: assetUrl('/assets/mobile/breakthrough-heroes/panda-left-v01.png?v=20260606'),
+      right: assetUrl('/assets/mobile/breakthrough-heroes/panda-right-v01.png?v=20260606'),
+    },
+  } satisfies Record<LightBombCharacterId, Record<CityDirection, string>>,
   mechaSquid: {
     up: assetUrl('/assets/mobile/enemies/mecha-squid-up-cutout.webp?v=20260530b'),
     down: assetUrl('/assets/mobile/enemies/mecha-squid-down-cutout.webp?v=20260530b'),
@@ -831,6 +858,10 @@ const lightBombCharacters: LightBombCharacterDef[] = [
 
 function lightBombCharacterDef(id: LightBombCharacterId) {
   return lightBombCharacters.find((character) => character.id === id) ?? lightBombCharacters[0];
+}
+
+function breakthroughHeroImage(id: LightBombCharacterId, direction: CityDirection) {
+  return assets.breakthroughHeroes[id]?.[direction] ?? assets.breakthroughHeroes.prince.down;
 }
 
 const breakthroughCharacterStats: Record<LightBombCharacterId, BreakthroughCharacterStats> = {
@@ -6928,12 +6959,17 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
           const big = Boolean(stats.big || powerLevel >= 2 || chargeToFire === 2 || (charged && chargeLevel >= 2));
           const shotSpeed = stats.shotSpeed * (1 + rapidLevel * 0.075 + (charged ? 0.06 + chargeLevel * 0.025 : 0));
           const baseDamage = stats.damage + Math.floor((powerLevel + 1) / 2) + (charged ? chargeToFire + chargeLevel + Math.floor(pierceLevel / 2) : 0);
+          const baseRange = charged
+            ? 7.4 + chargeToFire * 1.25 + chargeLevel * 0.35 + pierceLevel * 0.22
+            : 5.8 + pierceLevel * 0.36 + rapidLevel * 0.16;
+          const maxRange = charged ? 10.6 : 7.6;
           const makeShot = (
             sideOffset: number,
             sideVelocity: number,
             tags: Pick<BreakthroughShot, 'spread' | 'double' | 'overcharged'> = {},
             damageValue = baseDamage,
             speedScale = 1,
+            rangeScale = 1,
           ): BreakthroughShot => ({
             id: nextId.current++,
             side: 'ally',
@@ -6943,6 +6979,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
             vy: vector.y * shotSpeed * speedScale + side.y * sideVelocity,
             dir: currentPlayer.dir,
             damage: damageValue,
+            rangeLeft: clamp(baseRange * rangeScale, 3.8, maxRange),
             piercing,
             big,
             chargeStage: charged ? chargeToFire : undefined,
@@ -6955,33 +6992,33 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
             if (doubleLevel >= 1) {
               const offset = 0.24 + doubleLevel * 0.08;
               nextShots.push(
-                makeShot(offset, 0, { double: true, overcharged }, sideBoltDamage, 0.96),
-                makeShot(-offset, 0, { double: true, overcharged }, sideBoltDamage, 0.96),
+                makeShot(offset, 0, { double: true, overcharged }, sideBoltDamage, 0.96, 0.92),
+                makeShot(-offset, 0, { double: true, overcharged }, sideBoltDamage, 0.96, 0.92),
               );
             }
             if (spreadLevel >= 1) {
               const spreadSpeed = 0.0046 + spreadLevel * 0.0016 + chargeLevel * 0.0008;
               nextShots.push(
-                makeShot(0, spreadSpeed, { spread: true, overcharged }, shardDamage, 0.94),
-                makeShot(0, -spreadSpeed, { spread: true, overcharged }, shardDamage, 0.94),
+                makeShot(0, spreadSpeed, { spread: true, overcharged }, shardDamage, 0.94, 0.82),
+                makeShot(0, -spreadSpeed, { spread: true, overcharged }, shardDamage, 0.94, 0.82),
               );
               if (spreadLevel >= 3) {
                 nextShots.push(
-                  makeShot(0.18, spreadSpeed * 1.35, { spread: true, overcharged }, shardDamage, 0.9),
-                  makeShot(-0.18, -spreadSpeed * 1.35, { spread: true, overcharged }, shardDamage, 0.9),
+                  makeShot(0.18, spreadSpeed * 1.35, { spread: true, overcharged }, shardDamage, 0.9, 0.74),
+                  makeShot(-0.18, -spreadSpeed * 1.35, { spread: true, overcharged }, shardDamage, 0.9, 0.74),
                 );
               }
             }
             if (chargeLevel >= 3 && rapidLevel >= 2) {
-              nextShots.push(makeShot(0, 0, { overcharged: true }, Math.max(1, Math.ceil(baseDamage * 0.5)), 0.72));
+              nextShots.push(makeShot(0, 0, { overcharged: true }, Math.max(1, Math.ceil(baseDamage * 0.5)), 0.72, 0.72));
             }
           } else {
-            if (doubleLevel >= 1) nextShots.push(makeShot(0.25, 0, { double: true }), makeShot(-0.25, 0, { double: true }));
-            if (doubleLevel >= 3) nextShots.push(makeShot(0.48, 0, { double: true }), makeShot(-0.48, 0, { double: true }));
+            if (doubleLevel >= 1) nextShots.push(makeShot(0.25, 0, { double: true }, baseDamage, 1, 0.92), makeShot(-0.25, 0, { double: true }, baseDamage, 1, 0.92));
+            if (doubleLevel >= 3) nextShots.push(makeShot(0.48, 0, { double: true }, baseDamage, 1, 0.86), makeShot(-0.48, 0, { double: true }, baseDamage, 1, 0.86));
             if (spreadLevel >= 1) {
               const spreadSpeed = 0.0048 + spreadLevel * 0.0014;
-              nextShots.push(makeShot(0, spreadSpeed, { spread: true }), makeShot(0, -spreadSpeed, { spread: true }));
-              if (spreadLevel >= 3) nextShots.push(makeShot(0.18, spreadSpeed * 1.28, { spread: true }), makeShot(-0.18, -spreadSpeed * 1.28, { spread: true }));
+              nextShots.push(makeShot(0, spreadSpeed, { spread: true }, baseDamage, 1, 0.8), makeShot(0, -spreadSpeed, { spread: true }, baseDamage, 1, 0.8));
+              if (spreadLevel >= 3) nextShots.push(makeShot(0.18, spreadSpeed * 1.28, { spread: true }, baseDamage, 1, 0.72), makeShot(-0.18, -spreadSpeed * 1.28, { spread: true }, baseDamage, 1, 0.72));
             }
           }
           shotsRef.current = [...shotsRef.current, ...nextShots].slice(-72);
@@ -7046,6 +7083,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
                 vy: vector.y * speed,
                 dir: nextEnemy.dir,
                 damage: nextEnemy.kind === 'boss' ? 2 : 1,
+                rangeLeft: nextEnemy.kind === 'boss' ? 8.4 : 6.8,
                 big: nextEnemy.kind === 'boss',
               });
               nextEnemy.cooldown = (nextEnemy.kind === 'boss' ? 940 + Math.random() * 520 : 1350 + Math.random() * 850) * stageConfig.enemyShotScale;
@@ -7056,8 +7094,12 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
 
         let nextHp = currentPlayer.hp;
         const movedShots = [...shotsRef.current, ...enemyShots]
-          .map((shot) => ({ ...shot, x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt }))
-          .filter((shot) => shot.x >= -1 && shot.x <= breakthroughCols + 1 && shot.y >= -2 && shot.y <= breakthroughRows + 2);
+          .map((shot) => {
+            const dx = shot.vx * dt;
+            const dy = shot.vy * dt;
+            return { ...shot, x: shot.x + dx, y: shot.y + dy, rangeLeft: shot.rangeLeft - Math.hypot(dx, dy) };
+          })
+          .filter((shot) => shot.rangeLeft > 0 && shot.x >= -1 && shot.x <= breakthroughCols + 1 && shot.y >= -2 && shot.y <= breakthroughRows + 2);
         const resolvedShots: BreakthroughShot[] = [];
         const canceledShots = new Set<number>();
         for (let i = 0; i < movedShots.length; i += 1) {
@@ -7271,14 +7313,14 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
                 key={character.id}
                 onClick={() => setSelectedCharacter(character.id)}
               >
-                <img src={character.image} alt="" />
+                <img src={breakthroughHeroImage(character.id, 'down')} alt="" />
                 <span>{character.name}</span>
                 <small>{breakthroughCharacterAbilityText[character.id]}</small>
               </button>
             ))}
           </div>
           <div className="breakthrough-selected">
-            <img src={selectedDef.image} alt="" />
+            <img src={breakthroughHeroImage(selectedCharacter, 'down')} alt="" />
             <span>{selectedDef.name}</span>
             <small>體力 {selectedStats.hp} · {breakthroughCharacterAbilityText[selectedCharacter]} · {breakthroughUpgradeSummary(breakthroughBaseUpgrades(selectedCharacter))}</small>
           </div>
@@ -7318,7 +7360,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
               </div>
             ))}
             <div className={`breakthrough-player ${visualPlayer.character} dir-${visualPlayer.dir} ${playerPoisoned ? 'poisoned' : ''} ${fireActive ? `charging charge-${Math.max(0, chargeStage)}` : ''} ${Object.entries(upgradeState).filter(([, level]) => level > 0).map(([upgrade]) => `weapon-${upgrade}`).join(' ')}`} style={tokenStyle(visualPlayer.x, visualPlayer.y)}>
-              <img src={lightBombCharacterDef(visualPlayer.character).image} alt="" />
+              <img src={breakthroughHeroImage(visualPlayer.character, visualPlayer.dir)} alt="" />
             </div>
             {shots.map((shot) => (
               <span className={`breakthrough-shot ${shot.side} dir-${shot.dir} ${shot.big ? 'big' : ''} ${shot.piercing ? 'piercing' : ''} ${shot.spread ? 'spread' : ''} ${shot.double ? 'double' : ''} ${shot.overcharged ? 'overcharged' : ''} ${shot.chargeStage ? `charged charge-${shot.chargeStage}` : ''}`} key={shot.id} style={tokenStyle(shot.x, shot.y)} />
