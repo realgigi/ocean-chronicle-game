@@ -63,6 +63,19 @@ const sceneShortHints: Record<PlayableScene, string> = {
   lightbomb: '炸彈人',
   revelation: '天蠶變',
 };
+const sceneVersions: Record<PlayableScene, string> = {
+  combat: 'v1.4',
+  memory: 'v1.2',
+  breakout: 'v1.6',
+  minefield: 'v1.2',
+  snowfield: 'v1.5',
+  snake: 'v2.0',
+  tower: 'v1.3',
+  city: 'v2.4',
+  breakthrough: 'v1.5',
+  lightbomb: 'v2.1',
+  revelation: 'v1.5',
+};
 const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
   combat: [900, 1300, 1500],
   memory: [700, 1100, 1450],
@@ -322,9 +335,29 @@ type SnakeObstacle = SnakeCell & {
   expiresAt: number;
 };
 
+type SnakeFood = SnakeCell & {
+  id: number;
+  value: number;
+  dropped?: boolean;
+};
+
+type SnakePowerupKind = 'shield' | 'boost' | 'magnet' | 'freeze' | 'burst' | 'feast';
+
 type SnakePowerup = SnakeCell & {
   id: number;
+  kind: SnakePowerupKind;
   expiresAt: number;
+};
+
+type SnakeRival = {
+  id: number;
+  name: string;
+  cells: SnakeCell[];
+  dir: SnakeDirection;
+  color: 'urchin' | 'squid' | 'anemone';
+  score: number;
+  alive: boolean;
+  respawnAt: number;
 };
 
 type SnakeStatus = 'ready' | 'playing' | 'won' | 'lost';
@@ -1219,15 +1252,18 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-const snakeCols = 24;
-const snakeRows = 36;
+const snakeCols = 38;
+const snakeRows = 58;
 const snakeViewCols = 10;
 const snakeViewRows = 16;
-const snakeTarget = 32;
+const snakeTarget = 82;
+const snakeFoodTarget = 24;
+const snakeRivalCount = 4;
+const snakeMaxFood = 64;
 const snakeStart: SnakeCell[] = [
-  { col: 12, row: 27 },
-  { col: 12, row: 28 },
-  { col: 12, row: 29 },
+  { col: 19, row: 44 },
+  { col: 19, row: 45 },
+  { col: 19, row: 46 },
 ];
 const snakeDecorations: SnakeDecoration[] = [
   { id: 1, kind: 'reef', row: 2, col: 1, width: 6, height: 4, rotate: -8 },
@@ -1246,7 +1282,30 @@ const snakeDecorations: SnakeDecoration[] = [
   { id: 14, kind: 'vent', row: 23, col: 8, width: 3, height: 3 },
   { id: 15, kind: 'reef', row: 14, col: 0, width: 4, height: 4, rotate: 18 },
   { id: 16, kind: 'current', row: 17, col: 10, width: 12, height: 3, rotate: 12 },
+  { id: 17, kind: 'reef', row: 37, col: 25, width: 8, height: 5, rotate: -10 },
+  { id: 18, kind: 'ruin', row: 43, col: 3, width: 7, height: 5, rotate: 5 },
+  { id: 19, kind: 'current', row: 48, col: 18, width: 15, height: 3, rotate: -7 },
+  { id: 20, kind: 'kelp', row: 50, col: 31, width: 5, height: 7, rotate: 8 },
+  { id: 21, kind: 'glow', row: 39, col: 10, width: 5, height: 5 },
+  { id: 22, kind: 'shell', row: 54, col: 6, width: 4, height: 2, rotate: 12 },
 ];
+const snakePowerupLabels: Record<SnakePowerupKind, string> = {
+  shield: '盾',
+  boost: '衝',
+  magnet: '吸',
+  freeze: '凍',
+  burst: '爆',
+  feast: '宴',
+};
+const snakePowerupText: Record<SnakePowerupKind, string> = {
+  shield: '護盾',
+  boost: '衝刺',
+  magnet: '吸引',
+  freeze: '凍結敵蛇',
+  burst: '爆波',
+  feast: '盛宴',
+};
+const snakePowerupKinds: SnakePowerupKind[] = ['shield', 'boost', 'magnet', 'freeze', 'burst', 'feast'];
 const towerGoalMs = 180000;
 const towerDeathPenaltyMs = 15000;
 const towerPlayerRadius = 3.6;
@@ -2662,60 +2721,137 @@ function snakeSmoothCamera(previous: { col: number; row: number }, head: SnakeCe
   };
 }
 
-function randomSnakeVisibleCell(snake: SnakeCell[], margin = 1): SnakeCell {
-  const head = snake[0] ?? snakeStart[0];
-  const halfCols = Math.floor(snakeViewCols / 2);
-  const halfRows = Math.floor(snakeViewRows / 2);
-  const minCol = clamp(head.col - halfCols + margin, 1, snakeCols - 2);
-  const maxCol = clamp(head.col + halfCols - margin, minCol, snakeCols - 2);
-  const minRow = clamp(head.row - halfRows + margin, 1, snakeRows - 2);
-  const maxRow = clamp(head.row + halfRows - margin, minRow, snakeRows - 2);
+function snakeCellKey(cell: SnakeCell) {
+  return `${cell.col}-${cell.row}`;
+}
+
+function snakeDistance(a: SnakeCell, b: SnakeCell) {
+  const dx = Math.abs(a.col - b.col);
+  const dy = Math.abs(a.row - b.row);
+  return Math.min(dx, snakeCols - dx) + Math.min(dy, snakeRows - dy);
+}
+
+function snakeAllCells(player: SnakeCell[], rivals: SnakeRival[]) {
+  return [...player, ...rivals.filter((rival) => rival.alive).flatMap((rival) => rival.cells)];
+}
+
+function randomSnakeOpenCell(player: SnakeCell[], rivals: SnakeRival[], foods: SnakeFood[] = [], powerup: SnakePowerup | null = null, minPlayerDistance = 4): SnakeCell {
+  const occupied = new Set(snakeAllCells(player, rivals).map(snakeCellKey));
+  foods.forEach((food) => occupied.add(snakeCellKey(food)));
+  if (powerup) occupied.add(snakeCellKey(powerup));
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    const candidate = {
+      col: randomInt(1, snakeCols - 2),
+      row: randomInt(1, snakeRows - 2),
+    };
+    if (occupied.has(snakeCellKey(candidate))) continue;
+    if (snakeDistance(candidate, player[0] ?? snakeStart[0]) < minPlayerDistance && attempt < 130) continue;
+    return candidate;
+  }
   return {
-    row: randomInt(minRow, maxRow),
-    col: randomInt(minCol, maxCol),
+    col: randomInt(1, snakeCols - 2),
+    row: randomInt(1, snakeRows - 2),
   };
 }
 
-function placeSnakeFood(snake: SnakeCell[], obstacles: SnakeObstacle[]): SnakeCell {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
-    const candidate = randomSnakeVisibleCell(snake, attempt < 50 ? 1 : 0);
-    if (!snake.some((cell) => sameCell(cell, candidate)) && !obstacles.some((cell) => sameCell(cell, candidate))) {
-      return candidate;
-    }
-  }
-  return randomSnakeVisibleCell(snake, 1);
+function createSnakeFood(id: number, cell: SnakeCell, value = 1, dropped = false): SnakeFood {
+  return { id, ...cell, value, dropped };
 }
 
-function createSnakeObstacle(snake: SnakeCell[], food: SnakeCell, obstacles: SnakeObstacle[], powerup: SnakePowerup | null): SnakeObstacle | null {
-  const head = snake[0];
-
-  for (let attempt = 0; attempt < 80; attempt += 1) {
-    const candidate = randomSnakeVisibleCell(snake, attempt < 50 ? 1 : 0);
-    const distanceToHead = Math.abs(candidate.row - head.row) + Math.abs(candidate.col - head.col);
-    const occupied =
-      distanceToHead < 4 ||
-      distanceToHead > 12 ||
-      sameCell(candidate, food) ||
-      (powerup ? sameCell(candidate, powerup) : false) ||
-      snake.some((cell) => sameCell(cell, candidate)) ||
-      obstacles.some((cell) => sameCell(cell, candidate));
-    if (!occupied) {
-      return { ...candidate, id: Date.now() + attempt, expiresAt: performance.now() + randomInt(3000, 5000) };
-    }
+function fillSnakeFoods(player: SnakeCell[], rivals: SnakeRival[], foods: SnakeFood[], nextId: () => number, target = snakeFoodTarget) {
+  const nextFoods = [...foods].slice(-snakeMaxFood);
+  while (nextFoods.length < target) {
+    nextFoods.push(createSnakeFood(nextId(), randomSnakeOpenCell(player, rivals, nextFoods, null, 3), Math.random() < 0.12 ? 2 : 1));
   }
-
-  return null;
+  return nextFoods.slice(-snakeMaxFood);
 }
 
-function placeSnakePowerup(snake: SnakeCell[], food: SnakeCell, obstacles: SnakeObstacle[]): SnakePowerup {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
-    const candidate = randomSnakeVisibleCell(snake, attempt < 50 ? 1 : 0);
-    const occupied = sameCell(candidate, food) || snake.some((cell) => sameCell(cell, candidate)) || obstacles.some((cell) => sameCell(cell, candidate));
-    if (!occupied) {
-      return { ...candidate, id: Date.now() + attempt, expiresAt: performance.now() + 7000 };
-    }
-  }
-  return { ...randomSnakeVisibleCell(snake, 1), id: Date.now(), expiresAt: performance.now() + 7000 };
+function dropSnakeFoods(cells: SnakeCell[], nextId: () => number, limit = 18) {
+  return cells
+    .filter((_, index) => index % 2 === 0)
+    .slice(0, limit)
+    .map((cell, index) => createSnakeFood(nextId(), cell, index < 3 ? 2 : 1, true));
+}
+
+function createSnakeRivalSnake(head: SnakeCell, direction: SnakeDirection): SnakeCell[] {
+  const reverse = direction === 'up' ? 'down' : direction === 'down' ? 'up' : direction === 'left' ? 'right' : 'left';
+  const body1 = wrapSnakeCell(nextSnakeHead(head, reverse));
+  const body2 = wrapSnakeCell(nextSnakeHead(body1, reverse));
+  return [head, body1, body2];
+}
+
+function createSnakeRivals(player: SnakeCell[] = snakeStart): SnakeRival[] {
+  const seeds: Array<Pick<SnakeRival, 'name' | 'color' | 'dir'>> = [
+    { name: '紫海膽蛇', color: 'urchin', dir: 'left' },
+    { name: '機甲烏賊蛇', color: 'squid', dir: 'right' },
+    { name: '海葵蛇', color: 'anemone', dir: 'up' },
+    { name: '暗潮蛇', color: 'urchin', dir: 'down' },
+  ];
+  const rivals: SnakeRival[] = [];
+  seeds.slice(0, snakeRivalCount).forEach((seed, index) => {
+    const head = randomSnakeOpenCell(player, rivals, [], null, 10);
+    rivals.push({
+      id: index + 1,
+      ...seed,
+      cells: createSnakeRivalSnake(head, seed.dir),
+      score: 0,
+      alive: true,
+      respawnAt: 0,
+    });
+  });
+  return rivals;
+}
+
+function respawnSnakeRival(rival: SnakeRival, player: SnakeCell[], rivals: SnakeRival[], foods: SnakeFood[], time: number): SnakeRival {
+  const direction = lightBombDirections[randomInt(0, lightBombDirections.length - 1)] as SnakeDirection;
+  const head = randomSnakeOpenCell(player, rivals.filter((other) => other.id !== rival.id), foods, null, 9);
+  return {
+    ...rival,
+    cells: createSnakeRivalSnake(head, direction),
+    dir: direction,
+    alive: true,
+    respawnAt: time + 999999,
+  };
+}
+
+function snakeGrowth(cells: SnakeCell[], head: SnakeCell, growBy: number) {
+  const base = [head, ...cells];
+  if (growBy <= 0) return base.slice(0, cells.length);
+  const tail = cells[cells.length - 1] ?? head;
+  while (base.length < cells.length + growBy) base.push({ ...tail });
+  return base.slice(0, cells.length + growBy);
+}
+
+function snakeNearestFood(head: SnakeCell, foods: SnakeFood[]) {
+  return foods.reduce<SnakeFood | null>((best, food) => (
+    !best || snakeDistance(head, food) < snakeDistance(head, best) ? food : best
+  ), null);
+}
+
+function snakeDirectionScore(from: SnakeCell, direction: SnakeDirection, target: SnakeCell) {
+  return snakeDistance(wrapSnakeCell(nextSnakeHead(from, direction)), target);
+}
+
+function chooseSnakeRivalDirection(rival: SnakeRival, foods: SnakeFood[], blocked: Set<string>) {
+  const head = rival.cells[0];
+  const target = snakeNearestFood(head, foods);
+  const directions = (['up', 'down', 'left', 'right'] as SnakeDirection[])
+    .filter((direction) => !isReverseDirection(rival.dir, direction))
+    .sort((a, b) => {
+      if (!target) return Math.random() - 0.5;
+      return snakeDirectionScore(head, a, target) - snakeDirectionScore(head, b, target);
+    });
+  return directions.find((direction) => !blocked.has(snakeCellKey(wrapSnakeCell(nextSnakeHead(head, direction))))) ?? rival.dir;
+}
+
+function placeSnakePowerup(player: SnakeCell[], rivals: SnakeRival[], foods: SnakeFood[], powerup: SnakePowerup | null): SnakePowerup {
+  const kind = snakePowerupKinds[randomInt(0, snakePowerupKinds.length - 1)];
+  return {
+    ...randomSnakeOpenCell(player, rivals, foods, powerup, 5),
+    id: Date.now() + randomInt(0, 9999),
+    kind,
+    expiresAt: performance.now() + 9000,
+  };
 }
 
 function chooseTowerPlatformKind(progressMs: number): TowerPlatformKind {
@@ -3435,7 +3571,10 @@ function EpisodeMap({
             onClick={onClick}
             aria-label={`${nodeLabel}，${cleared ? `已通關，${stars} 星，最佳 ${formatBestScore(best) || '未計分'}` : '尚未通關'}`}
           >
-            <span>{nodeLabel}</span>
+            <span className="map-node-title">
+              <b>{nodeLabel}</b>
+              <em className="map-node-version">{sceneVersions[scene]}</em>
+            </span>
             <small className="map-node-meta">
               {cleared ? (
                 <>
@@ -4665,10 +4804,15 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
   const stepDirectionRef = useRef<SnakeDirection>('up');
   const snakeRef = useRef<SnakeCell[]>(snakeStart);
   const snakeCameraRef = useRef(snakeCenteredCamera(snakeStart[0]));
-  const foodRef = useRef<SnakeCell>(placeSnakeFood(snakeStart, []));
-  const obstaclesRef = useRef<SnakeObstacle[]>([]);
+  const nextFoodId = useRef(1);
+  const initialRivals = useMemo(() => createSnakeRivals(snakeStart), []);
+  const foodsRef = useRef<SnakeFood[]>(fillSnakeFoods(snakeStart, initialRivals, [], () => nextFoodId.current++));
+  const rivalsRef = useRef<SnakeRival[]>(initialRivals);
   const powerupRef = useRef<SnakePowerup | null>(null);
   const invincibleUntilRef = useRef(0);
+  const boostUntilRef = useRef(0);
+  const magnetUntilRef = useRef(0);
+  const freezeRivalsUntilRef = useRef(0);
   const scoreRef = useRef(0);
   const livesRef = useRef(3);
   const statusRef = useRef<SnakeStatus>('ready');
@@ -4678,10 +4822,13 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
   const [direction, setDirection] = useState<SnakeDirection>('up');
   const [snake, setSnake] = useState<SnakeCell[]>(snakeStart);
   const [snakeCamera, setSnakeCamera] = useState(() => snakeCenteredCamera(snakeStart[0]));
-  const [food, setFood] = useState<SnakeCell>(() => placeSnakeFood(snakeStart, []));
-  const [obstacles, setObstacles] = useState<SnakeObstacle[]>([]);
+  const [foods, setFoods] = useState<SnakeFood[]>(() => foodsRef.current);
+  const [rivals, setRivals] = useState<SnakeRival[]>(initialRivals);
   const [powerup, setPowerup] = useState<SnakePowerup | null>(null);
   const [invincibleUntil, setInvincibleUntil] = useState(0);
+  const [boostUntil, setBoostUntil] = useState(0);
+  const [magnetUntil, setMagnetUntil] = useState(0);
+  const [freezeRivalsUntil, setFreezeRivalsUntil] = useState(0);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [status, setStatus] = useState<SnakeStatus>('ready');
@@ -4694,7 +4841,8 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
   const [skipSnakeTransition, setSkipSnakeTransition] = useState(false);
   const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
   const [padVector, setPadVector] = useState<DirectionPadVector>({ x: 0, y: 0 });
-  const snakeStepMs = Math.max(118, 205 - Math.floor(score / 5) * 14);
+  const nowForPace = performance.now();
+  const snakeStepMs = Math.round(Math.max(92, 188 - Math.floor(score / 10) * 8) * (boostUntil > nowForPace ? 0.72 : 1));
   const snakeCellPx = Math.max(22, Math.min((snakeBoardSize.width || 360) / snakeViewCols, (snakeBoardSize.height || 540) / snakeViewRows));
   const snakeViewportWidthPx = snakeCellPx * snakeViewCols;
   const snakeViewportHeightPx = snakeCellPx * snakeViewRows;
@@ -4743,12 +4891,12 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
   }, [snake]);
 
   useEffect(() => {
-    foodRef.current = food;
-  }, [food]);
+    foodsRef.current = foods;
+  }, [foods]);
 
   useEffect(() => {
-    obstaclesRef.current = obstacles;
-  }, [obstacles]);
+    rivalsRef.current = rivals;
+  }, [rivals]);
 
   useEffect(() => {
     powerupRef.current = powerup;
@@ -4757,6 +4905,18 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
   useEffect(() => {
     invincibleUntilRef.current = invincibleUntil;
   }, [invincibleUntil]);
+
+  useEffect(() => {
+    boostUntilRef.current = boostUntil;
+  }, [boostUntil]);
+
+  useEffect(() => {
+    magnetUntilRef.current = magnetUntil;
+  }, [magnetUntil]);
+
+  useEffect(() => {
+    freezeRivalsUntilRef.current = freezeRivalsUntil;
+  }, [freezeRivalsUntil]);
 
   useEffect(() => {
     scoreRef.current = score;
@@ -4781,27 +4941,40 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
     setDirection(next);
   }, []);
 
-  const resetRound = useCallback((nextLives: number, notice: SnakeReadyNotice = { title: '海潮待命', detail: '拖曳方向鍵開始' }) => {
+  const resetRound = useCallback((nextLives: number, notice: SnakeReadyNotice = { title: '海潮待命', detail: '拖曳方向鍵開始' }, options: { preserveWorld?: boolean } = {}) => {
     if (wrapEffectTimer.current) window.clearTimeout(wrapEffectTimer.current);
     const nextCamera = snakeCenteredCamera(snakeStart[0]);
     wrapEffectTimer.current = null;
     directionRef.current = 'up';
     stepDirectionRef.current = 'up';
-    obstaclesRef.current = [];
     powerupRef.current = null;
     invincibleUntilRef.current = 0;
+    boostUntilRef.current = 0;
+    magnetUntilRef.current = 0;
+    freezeRivalsUntilRef.current = 0;
     snakeRef.current = snakeStart;
     snakeCameraRef.current = nextCamera;
     movePointerRef.current = null;
-    const nextFood = placeSnakeFood(snakeStart, []);
-    foodRef.current = nextFood;
+    if (!options.preserveWorld) {
+      const nextRivals = createSnakeRivals(snakeStart);
+      const nextFoods = fillSnakeFoods(snakeStart, nextRivals, [], () => nextFoodId.current++);
+      rivalsRef.current = nextRivals;
+      foodsRef.current = nextFoods;
+      setRivals(nextRivals);
+      setFoods(nextFoods);
+    } else {
+      const refilled = fillSnakeFoods(snakeStart, rivalsRef.current, foodsRef.current, () => nextFoodId.current++);
+      foodsRef.current = refilled;
+      setFoods(refilled);
+    }
     setDirection('up');
     setSnake(snakeStart);
     setSnakeCamera(nextCamera);
-    setFood(nextFood);
-    setObstacles([]);
     setPowerup(null);
     setInvincibleUntil(0);
+    setBoostUntil(0);
+    setMagnetUntil(0);
+    setFreezeRivalsUntil(0);
     setWrapEffect(null);
     setSkipSnakeTransition(false);
     setPadDirection(null);
@@ -4821,7 +4994,11 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
     resetRound(3, { title: '重新開始', detail: '拖曳方向鍵再出發' });
   }, [resetRound]);
 
-  const loseLife = useCallback((reason: 'self' | 'obstacle') => {
+  const loseLife = useCallback((reason: 'self' | 'rival') => {
+    const dropped = dropSnakeFoods(snakeRef.current, () => nextFoodId.current++, 20);
+    const nextFoodPool = fillSnakeFoods(snakeStart, rivalsRef.current, [...foodsRef.current, ...dropped], () => nextFoodId.current++);
+    foodsRef.current = nextFoodPool;
+    setFoods(nextFoodPool);
     const nextLives = livesRef.current - 1;
     livesRef.current = nextLives;
     playGameSfx('hit');
@@ -4834,9 +5011,9 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
     statusRef.current = 'ready';
     setStatus('ready');
     resetRound(nextLives, {
-      title: reason === 'self' ? '撞到自己，回到起點' : '被障礙擊中，回到起點',
+      title: reason === 'self' ? '撞到自己，身體化成海光' : '撞上敵蛇，身體化成海光',
       detail: `剩餘 ${nextLives} 命，拖曳方向鍵繼續`,
-    });
+    }, { preserveWorld: true });
   }, [resetRound]);
 
   useEffect(() => {
@@ -4844,11 +5021,6 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
       if (pausedRef.current) return;
       if (statusRef.current !== 'playing') return;
       const now = performance.now();
-      const activeObstacles = obstaclesRef.current.filter((obstacle) => obstacle.expiresAt > now);
-      if (activeObstacles.length !== obstaclesRef.current.length) {
-        obstaclesRef.current = activeObstacles;
-        setObstacles(activeObstacles);
-      }
       if (powerupRef.current && powerupRef.current.expiresAt <= now) {
         powerupRef.current = null;
         setPowerup(null);
@@ -4856,6 +5028,18 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
       if (invincibleUntilRef.current > 0 && invincibleUntilRef.current <= now) {
         invincibleUntilRef.current = 0;
         setInvincibleUntil(0);
+      }
+      if (boostUntilRef.current > 0 && boostUntilRef.current <= now) {
+        boostUntilRef.current = 0;
+        setBoostUntil(0);
+      }
+      if (magnetUntilRef.current > 0 && magnetUntilRef.current <= now) {
+        magnetUntilRef.current = 0;
+        setMagnetUntil(0);
+      }
+      if (freezeRivalsUntilRef.current > 0 && freezeRivalsUntilRef.current <= now) {
+        freezeRivalsUntilRef.current = 0;
+        setFreezeRivalsUntil(0);
       }
 
       const currentSnake = snakeRef.current;
@@ -4873,53 +5057,141 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
           wrapEffectTimer.current = null;
         }, 170);
       }
-      const hitObstacle = activeObstacles.some((obstacle) => sameCell(obstacle, head));
       const isInvincible = invincibleUntilRef.current > now;
-      const ateFood = sameCell(head, foodRef.current);
-      const atePowerup = powerupRef.current ? sameCell(head, powerupRef.current) : false;
-      const materialBonus = hitObstacle && isInvincible ? 2 : 0;
-      const bodyCells = ateFood || materialBonus > 0 ? currentSnake.slice(1) : currentSnake.slice(1, -1);
+      const magnetActive = magnetUntilRef.current > now;
+      const currentRivals = rivalsRef.current.map((rival) => ({ ...rival, cells: rival.cells.map((cell) => ({ ...cell })) }));
+      let nextFoods = foodsRef.current.slice(-snakeMaxFood);
+      let scoreGain = 0;
+      let growBy = 0;
+
+      const collectedFoodIds = new Set<number>();
+      nextFoods.forEach((food) => {
+        const collected = sameCell(food, head) || (magnetActive && snakeDistance(food, head) <= 2);
+        if (!collected) return;
+        collectedFoodIds.add(food.id);
+        growBy += food.value;
+        scoreGain += food.value;
+      });
+      nextFoods = nextFoods.filter((food) => !collectedFoodIds.has(food.id));
+
+      const pickedPowerup = powerupRef.current && sameCell(powerupRef.current, head) ? powerupRef.current : null;
+      if (pickedPowerup) {
+        powerupRef.current = null;
+        setPowerup(null);
+        playGameSfx('powerup');
+        if (pickedPowerup.kind === 'shield') {
+          invincibleUntilRef.current = now + 5200;
+          setInvincibleUntil(invincibleUntilRef.current);
+        } else if (pickedPowerup.kind === 'boost') {
+          boostUntilRef.current = now + 6500;
+          setBoostUntil(boostUntilRef.current);
+        } else if (pickedPowerup.kind === 'magnet') {
+          magnetUntilRef.current = now + 7600;
+          setMagnetUntil(magnetUntilRef.current);
+        } else if (pickedPowerup.kind === 'freeze') {
+          freezeRivalsUntilRef.current = now + 4200;
+          setFreezeRivalsUntil(freezeRivalsUntilRef.current);
+        } else if (pickedPowerup.kind === 'feast') {
+          growBy += 6;
+          scoreGain += 6;
+        } else if (pickedPowerup.kind === 'burst') {
+          const nearest = currentRivals
+            .filter((rival) => rival.alive)
+            .sort((a, b) => snakeDistance(a.cells[0], head) - snakeDistance(b.cells[0], head))[0];
+          if (nearest && snakeDistance(nearest.cells[0], head) <= 6) {
+            nearest.alive = false;
+            nearest.respawnAt = now + 4600;
+            nextFoods = [...nextFoods, ...dropSnakeFoods(nearest.cells, () => nextFoodId.current++, 18)];
+            scoreGain += 8;
+            growBy += 3;
+            playGameSfx('blast');
+          } else {
+            scoreGain += 3;
+            growBy += 2;
+          }
+        }
+      }
+
+      const rivalHit = currentRivals.find((rival) => rival.alive && rival.cells.some((cell) => sameCell(cell, head)));
+      if (rivalHit && isInvincible) {
+        rivalHit.alive = false;
+        rivalHit.respawnAt = now + 4600;
+        nextFoods = [...nextFoods, ...dropSnakeFoods(rivalHit.cells, () => nextFoodId.current++, 18)];
+        scoreGain += 6;
+        growBy += 2;
+        playGameSfx('blast');
+      }
+
+      const bodyCells = growBy > 0 ? currentSnake.slice(1) : currentSnake.slice(1, -1);
       const hitSelf = bodyCells.some((cell) => sameCell(cell, head));
       if (hitSelf) {
         loseLife('self');
         return;
       }
-      if (hitObstacle && !isInvincible) {
-        loseLife('obstacle');
+      if (rivalHit && !isInvincible) {
+        loseLife('rival');
         return;
       }
       const nextSnakeCamera = didWrap ? snakeCenteredCamera(head) : snakeSmoothCamera(snakeCameraRef.current, head);
       snakeCameraRef.current = nextSnakeCamera;
       setSnakeCamera(nextSnakeCamera);
-      if (materialBonus > 0) {
-        const clearedObstacles = activeObstacles.filter((obstacle) => !sameCell(obstacle, head));
-        obstaclesRef.current = clearedObstacles;
-        setObstacles(clearedObstacles);
-      }
 
-      const growBy = (ateFood ? 1 : 0) + materialBonus;
-      const baseSnake = growBy > 0 ? [head, ...currentSnake] : [head, ...currentSnake.slice(0, -1)];
-      const tail = currentSnake[currentSnake.length - 1];
-      const nextSnake = growBy > 1 ? [...baseSnake, ...Array.from({ length: growBy - 1 }, () => ({ ...tail }))] : baseSnake;
+      const nextSnake = snakeGrowth(currentSnake, head, growBy);
       stepDirectionRef.current = moveDirection;
       snakeRef.current = nextSnake;
       setSnake(nextSnake);
 
-      if (atePowerup) {
-        const nextInvincibleUntil = now + 5000;
-        powerupRef.current = null;
-        invincibleUntilRef.current = nextInvincibleUntil;
-        setPowerup(null);
-        setInvincibleUntil(nextInvincibleUntil);
-        playGameSfx('powerup');
+      let playerDefeatedByRival = false;
+      const frozen = freezeRivalsUntilRef.current > now;
+      let nextRivals = currentRivals.map((rival) => {
+        if (!rival.alive) {
+          return rival.respawnAt <= now ? respawnSnakeRival(rival, nextSnake, currentRivals, nextFoods, now) : rival;
+        }
+        if (frozen) return rival;
+
+        const otherRivals = currentRivals.filter((other) => other.id !== rival.id && other.alive);
+        const blocked = new Set([...nextSnake, ...otherRivals.flatMap((other) => other.cells)].map(snakeCellKey));
+        const nextDir = chooseSnakeRivalDirection(rival, nextFoods, blocked);
+        const nextHead = wrapSnakeCell(nextSnakeHead(rival.cells[0], nextDir));
+        const food = nextFoods.find((item) => sameCell(item, nextHead));
+        const rivalGrowBy = food?.value ?? 0;
+        if (food) nextFoods = nextFoods.filter((item) => item.id !== food.id);
+        const nextCells = snakeGrowth(rival.cells, nextHead, rivalGrowBy);
+        const selfBody = rivalGrowBy > 0 ? rival.cells.slice(1) : rival.cells.slice(1, -1);
+        const hitSelfRival = selfBody.some((cell) => sameCell(cell, nextHead));
+        const hitPlayer = nextSnake.some((cell) => sameCell(cell, nextHead));
+        const hitOther = otherRivals.some((other) => other.cells.some((cell) => sameCell(cell, nextHead)));
+        if (hitSelfRival || hitOther || hitPlayer) {
+          if (hitPlayer && sameCell(nextSnake[0], nextHead) && nextCells.length > nextSnake.length && !isInvincible) {
+            playerDefeatedByRival = true;
+            return { ...rival, cells: nextCells, dir: nextDir, score: rival.score + rivalGrowBy };
+          }
+          nextFoods = [...nextFoods, ...dropSnakeFoods(rival.cells, () => nextFoodId.current++, 14)];
+          return { ...rival, alive: false, respawnAt: now + 4400 };
+        }
+        return {
+          ...rival,
+          cells: nextCells,
+          dir: nextDir,
+          score: rival.score + rivalGrowBy,
+        };
+      });
+
+      if (playerDefeatedByRival) {
+        rivalsRef.current = nextRivals;
+        setRivals(nextRivals);
+        foodsRef.current = nextFoods.slice(-snakeMaxFood);
+        setFoods(foodsRef.current);
+        loseLife('rival');
+        return;
       }
 
-      if (ateFood || materialBonus > 0) {
-        const nextScore = scoreRef.current + (ateFood ? 1 : 0) + materialBonus;
+      if (scoreGain > 0) {
+        const nextScore = scoreRef.current + scoreGain;
         scoreRef.current = nextScore;
         setScore(nextScore);
         setOceanBgmIntensity(1 + Math.min(0.45, nextScore / snakeTarget * 0.45));
-        if (ateFood || materialBonus > 0) playGameSfx(materialBonus > 0 ? 'blast' : 'score');
+        playGameSfx(pickedPowerup?.kind === 'burst' ? 'blast' : 'score');
         if (nextScore >= snakeTarget) {
           statusRef.current = 'won';
           setStatus('won');
@@ -4930,13 +5202,16 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
           }
           return;
         }
-        if (ateFood) {
-          const nextObstaclesForFood = obstaclesRef.current.filter((obstacle) => obstacle.expiresAt > now);
-          const nextFood = placeSnakeFood(nextSnake, nextObstaclesForFood);
-          foodRef.current = nextFood;
-          setFood(nextFood);
-        }
       }
+
+      nextFoods = fillSnakeFoods(nextSnake, nextRivals, nextFoods, () => nextFoodId.current++);
+      nextRivals = nextRivals.map((rival) => (
+        !rival.alive && rival.respawnAt <= now ? respawnSnakeRival(rival, nextSnake, nextRivals, nextFoods, now) : rival
+      ));
+      foodsRef.current = nextFoods.slice(-snakeMaxFood);
+      rivalsRef.current = nextRivals;
+      setFoods(foodsRef.current);
+      setRivals(nextRivals);
     }, snakeStepMs);
     return () => window.clearInterval(timer);
   }, [loseLife, onComplete, snakeStepMs]);
@@ -4951,23 +5226,8 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (pausedRef.current) return;
-      if (statusRef.current !== 'playing') return;
-      const now = performance.now();
-      const activeObstacles = obstaclesRef.current.filter((obstacle) => obstacle.expiresAt > now);
-      const shouldSpawn = activeObstacles.length < 3 || (activeObstacles.length < 5 && Math.random() > 0.45);
-      const spawned = shouldSpawn ? createSnakeObstacle(snakeRef.current, foodRef.current, activeObstacles, powerupRef.current) : null;
-      const nextObstacles = spawned ? [...activeObstacles, spawned] : activeObstacles;
-      obstaclesRef.current = nextObstacles;
-      setObstacles(nextObstacles);
-    }, 950);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (pausedRef.current) return;
       if (statusRef.current !== 'playing' || powerupRef.current) return;
-      const nextPowerup = placeSnakePowerup(snakeRef.current, foodRef.current, obstaclesRef.current);
+      const nextPowerup = placeSnakePowerup(snakeRef.current, rivalsRef.current, foodsRef.current, powerupRef.current);
       powerupRef.current = nextPowerup;
       setPowerup(nextPowerup);
     }, 10000);
@@ -5056,6 +5316,11 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
   const snakeInvincibleRemaining = invincibleUntil - snakeRenderTime;
   const snakeInvincibleActive = snakeInvincibleRemaining > 0;
   const snakeInvincibleEnding = snakeInvincibleActive && snakeInvincibleRemaining < 1600;
+  const snakeBoostActive = boostUntil > snakeRenderTime;
+  const snakeMagnetActive = magnetUntil > snakeRenderTime;
+  const snakeFreezeActive = freezeRivalsUntil > snakeRenderTime;
+  const aliveRivals = rivals.filter((rival) => rival.alive).length;
+  const activeSnakePowerLabel = snakeInvincibleActive ? '護盾' : snakeBoostActive ? '衝刺' : snakeMagnetActive ? '吸引' : snakeFreezeActive ? '凍結' : '';
   const snakeDebugItems: GridDebugItem[] = [
     { label: 'head', value: gridCellLabel(snake[0]?.col ?? 0, snake[0]?.row ?? 0) },
     { label: 'dir', value: direction },
@@ -5063,7 +5328,8 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
     { label: 'camera', value: `${snakeCamera.col.toFixed(2)},${snakeCamera.row.toFixed(2)}` },
     { label: 'status', value: status },
     { label: 'tick', value: snakeStepMs },
-    { label: 'food', value: gridCellLabel(food.col, food.row) },
+    { label: 'food', value: foods.length },
+    { label: 'rivals', value: aliveRivals },
   ];
 
   return (
@@ -5092,7 +5358,26 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
             {snakeDecorations.map((decor) => (
               <span className={`snake-decor ${decor.kind}`} key={decor.id} style={snakeDecorationStyle(decor)} />
             ))}
-            <span className="snake-food" style={snakePositionStyle(food)} />
+            {foods.map((food) => (
+              <span className={`snake-food ${food.dropped ? 'dropped' : ''} value-${food.value}`} key={food.id} style={snakePositionStyle(food)} />
+            ))}
+            {rivals.map((rival) => rival.alive && rival.cells.map((cell, index) => (
+              index === 0 ? (
+                <img
+                  className={`snake-rival-head ${rival.color} face-${rival.dir} ${snakeFreezeActive ? 'frozen' : ''}`}
+                  key={`rival-${rival.id}-head`}
+                  src={assets.lightBombHeads[rival.color]}
+                  alt=""
+                  style={snakePositionStyle(cell)}
+                />
+              ) : (
+                <span
+                  className={`snake-rival-segment ${rival.color} ${snakeFreezeActive ? 'frozen' : ''}`}
+                  key={`rival-${rival.id}-${index}`}
+                  style={snakePositionStyle(cell, { opacity: clamp(0.92 - index * 0.03, 0.35, 0.86) })}
+                />
+              )
+            )))}
             {snakeInvincibleActive && (
               <span className={`snake-aura ${snakeInvincibleEnding ? 'ending' : ''}`} style={snakePositionStyle(snake[0])} />
             )}
@@ -5113,22 +5398,10 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
                 />
               ),
             )}
-            {obstacles.map((obstacle) => (
-              <img
-                className="snake-obstacle"
-                key={obstacle.id}
-                src={assets.bossStates.idle}
-                alt=""
-                style={snakePositionStyle(obstacle)}
-              />
-            ))}
             {powerup && (
-              <img
-                className="snake-powerup"
-                src={assets.pickup}
-                alt=""
-                style={snakePositionStyle(powerup)}
-              />
+              <span className={`snake-powerup ${powerup.kind}`} style={snakePositionStyle(powerup)}>
+                {snakePowerupLabels[powerup.kind]}
+              </span>
             )}
             {wrapEffect && (
               <>
@@ -5144,12 +5417,33 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
             <span>
               命 <strong>{lives}/3</strong>
             </span>
-            {snakeInvincibleActive && (
+            <span>
+              敵蛇 <strong>{aliveRivals}/{snakeRivalCount}</strong>
+            </span>
+            {activeSnakePowerLabel && (
               <span className={`snake-invincible ${snakeInvincibleEnding ? 'ending' : ''}`}>
                 <Sparkles size={13} />
-                無敵
+                {activeSnakePowerLabel}
               </span>
             )}
+          </div>
+          <div className="snake-minimap">
+            <span
+              className="view"
+              style={{
+                left: `${(snakeCamera.col / snakeCols) * 100}%`,
+                top: `${(snakeCamera.row / snakeRows) * 100}%`,
+                width: `${(snakeViewCols / snakeCols) * 100}%`,
+                height: `${(snakeViewRows / snakeRows) * 100}%`,
+              }}
+            />
+            <span className="player" style={{ left: `${((snake[0]?.col ?? 0) / snakeCols) * 100}%`, top: `${((snake[0]?.row ?? 0) / snakeRows) * 100}%` }} />
+            {rivals.filter((rival) => rival.alive).map((rival) => (
+              <span className={`enemy ${rival.color}`} key={`mini-snake-${rival.id}`} style={{ left: `${(rival.cells[0].col / snakeCols) * 100}%`, top: `${(rival.cells[0].row / snakeRows) * 100}%` }} />
+            ))}
+            {foods.slice(0, 18).map((food) => (
+              <span className="food" key={`mini-food-${food.id}`} style={{ left: `${(food.col / snakeCols) * 100}%`, top: `${(food.row / snakeRows) * 100}%` }} />
+            ))}
           </div>
           {status === 'ready' && (
             <div className="snake-ready">
@@ -7377,6 +7671,22 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
             <span>{upgradeSummary}</span>
             <span>{chargeLabel}</span>
           </div>
+          <div className="breakthrough-minimap">
+            <span
+              className="view"
+              style={{
+                left: `${(camera.x / breakthroughCols) * 100}%`,
+                top: `${(camera.y / breakthroughRows) * 100}%`,
+                width: `${(breakthroughViewCols / breakthroughCols) * 100}%`,
+                height: `${(breakthroughViewRows / breakthroughRows) * 100}%`,
+              }}
+            />
+            <span className="goal" style={{ left: `${((breakthroughBossStart.col + 0.5) / breakthroughCols) * 100}%`, top: `${((breakthroughGoalRow + 0.5) / breakthroughRows) * 100}%` }} />
+            <span className="player" style={{ left: `${((visualPlayer.x + 0.5) / breakthroughCols) * 100}%`, top: `${((visualPlayer.y + 0.5) / breakthroughRows) * 100}%` }} />
+            {visualEnemies.map((enemy) => (
+              <span className={`enemy ${enemy.kind}`} key={`breakthrough-mini-${enemy.id}`} style={{ left: `${((enemy.x + 0.5) / breakthroughCols) * 100}%`, top: `${((enemy.y + 0.5) / breakthroughRows) * 100}%` }} />
+            ))}
+          </div>
           {debugGrid && <GridDebugOverlay title="BREAKTHROUGH" items={debugItems} />}
           {notice && <div className={`city-notice ${notice.kind}`} key={notice.id}>{notice.text}</div>}
           <div
@@ -8104,6 +8414,25 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
             <span>光爆 {bombs.length}/{player.maxBombs}</span>
             <span>火力 {player.range}</span>
           </div>
+          <div className="lightbomb-minimap">
+            <span
+              className="view"
+              style={{
+                left: `${(camera.x / lightBombCols) * 100}%`,
+                top: `${(camera.y / lightBombRows) * 100}%`,
+                width: `${(lightBombViewCols / lightBombCols) * 100}%`,
+                height: `${(lightBombViewRows / lightBombRows) * 100}%`,
+              }}
+            />
+            {exitFound && <span className={`goal ${exitVisible ? 'open' : ''}`} style={{ left: `${((exit.col + 0.5) / lightBombCols) * 100}%`, top: `${((exit.row + 0.5) / lightBombRows) * 100}%` }} />}
+            <span className="player" style={{ left: `${((player.x + 0.5) / lightBombCols) * 100}%`, top: `${((player.y + 0.5) / lightBombRows) * 100}%` }} />
+            {enemies.map((enemy) => (
+              <span className={`enemy ${enemy.kind}`} key={`lightbomb-mini-${enemy.id}`} style={{ left: `${((enemy.x + 0.5) / lightBombCols) * 100}%`, top: `${((enemy.y + 0.5) / lightBombRows) * 100}%` }} />
+            ))}
+            {powerups.slice(0, 10).map((powerup) => (
+              <span className="food" key={`lightbomb-mini-power-${powerup.id}`} style={{ left: `${((powerup.col + 0.5) / lightBombCols) * 100}%`, top: `${((powerup.row + 0.5) / lightBombRows) * 100}%` }} />
+            ))}
+          </div>
           {debugGrid && <GridDebugOverlay title="BOMB GRID" items={lightBombDebugItems} />}
           {notice && <div className={`lightbomb-notice ${notice.kind}`} key={notice.id}>{notice.text}</div>}
           <div
@@ -8716,6 +9045,24 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
             <span>目標 <strong>{revelationTargetPercent}%</strong></span>
             <span>時 <strong>{remainingSec}</strong></span>
             <span>命 <strong>{lives}</strong></span>
+          </div>
+          <div className="revelation-minimap">
+            <span
+              className="view"
+              style={{
+                left: `${(camera.x / revelationCols) * 100}%`,
+                top: `${(camera.y / revelationRows) * 100}%`,
+                width: `${(11 / revelationCols) * 100}%`,
+                height: `${(18 / revelationRows) * 100}%`,
+              }}
+            />
+            <span className="player" style={{ left: `${(player.x / revelationCols) * 100}%`, top: `${(player.y / revelationRows) * 100}%` }} />
+            {enemies.map((enemy) => (
+              <span className={`enemy ${enemy.kind}`} key={`revelation-mini-${enemy.id}`} style={{ left: `${(enemy.x / revelationCols) * 100}%`, top: `${(enemy.y / revelationRows) * 100}%` }} />
+            ))}
+            {powerups.slice(0, 9).map((powerup) => (
+              <span className="food" key={`revelation-mini-power-${powerup.id}`} style={{ left: `${((powerup.col + 0.5) / revelationCols) * 100}%`, top: `${((powerup.row + 0.5) / revelationRows) * 100}%` }} />
+            ))}
           </div>
           {notice && <div className={`revelation-notice ${notice.kind}`} key={notice.id}>{notice.text}</div>}
           {status === 'ready' && (
