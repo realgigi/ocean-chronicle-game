@@ -69,10 +69,10 @@ const sceneVersions: Record<PlayableScene, string> = {
   breakout: 'v1.7',
   minefield: 'v1.3',
   snowfield: 'v1.6',
-  snake: 'v2.1',
+  snake: 'v2.2',
   tower: 'v1.4',
   city: 'v2.5',
-  breakthrough: 'v1.6',
+  breakthrough: 'v1.7',
   lightbomb: 'v2.2',
   revelation: 'v1.6',
 };
@@ -4848,6 +4848,8 @@ function SnowfieldGame({ onBack, onComplete }: { onBack: () => void; onComplete:
 function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; onBack: () => void; onComplete: GameCompleteHandler }) {
   const snakeBoardRef = useRef<HTMLDivElement | null>(null);
   const pausedRef = useGamePausedRef();
+  const snakeRafRef = useRef<number | null>(null);
+  const nextSnakeStepAt = useRef(0);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const movePointerRef = useRef<number | null>(null);
   const directionRef = useRef<SnakeDirection>('up');
@@ -5067,10 +5069,21 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
   }, [resetRound]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (pausedRef.current) return;
-      if (statusRef.current !== 'playing') return;
-      const now = performance.now();
+    nextSnakeStepAt.current = 0;
+    const tick = (time: number) => {
+      try {
+        if (pausedRef.current) {
+          nextSnakeStepAt.current = time + snakeStepMs;
+          return;
+        }
+        if (statusRef.current !== 'playing') {
+          nextSnakeStepAt.current = 0;
+          return;
+        }
+        if (nextSnakeStepAt.current <= 0) nextSnakeStepAt.current = time;
+        if (time < nextSnakeStepAt.current) return;
+        nextSnakeStepAt.current = time + snakeStepMs;
+        const now = time;
       if (powerupRef.current && powerupRef.current.expiresAt <= now) {
         powerupRef.current = null;
         setPowerup(null);
@@ -5262,8 +5275,16 @@ function TideSnakeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; 
       rivalsRef.current = nextRivals;
       setFoods(foodsRef.current);
       setRivals(nextRivals);
-    }, snakeStepMs);
-    return () => window.clearInterval(timer);
+      } finally {
+        snakeRafRef.current = requestAnimationFrame(tick);
+      }
+    };
+    snakeRafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (snakeRafRef.current) cancelAnimationFrame(snakeRafRef.current);
+      snakeRafRef.current = null;
+      nextSnakeStepAt.current = 0;
+    };
   }, [loseLife, onComplete, snakeStepMs]);
 
   useEffect(
@@ -7670,7 +7691,10 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
     transform: `translate3d(${-camera.x * cellPx}px, ${-camera.y * cellPx}px, 0)`,
     ['--city-powerup-size' as string]: `${cellPx * 0.92}px`,
   };
-  const tokenStyle = (x: number, y: number): CSSProperties => ({ left: `${(x + 0.5) * cellPx}px`, top: `${(y + 0.5) * cellPx}px` });
+  const tokenStyle = (x: number, y: number): CSSProperties => ({
+    ['--bt-x' as string]: `${(x + 0.5) * cellPx}px`,
+    ['--bt-y' as string]: `${(y + 0.5) * cellPx}px`,
+  });
   const cellStyle = (row: number, col: number): CSSProperties => ({ left: `${col * cellPx}px`, top: `${row * cellPx}px`, width: `${cellPx}px`, height: `${cellPx}px` });
   const bossAlive = enemies.some((enemy) => enemy.kind === 'boss');
   const selectedDef = lightBombCharacterDef(selectedCharacter);

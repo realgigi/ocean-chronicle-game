@@ -6,6 +6,7 @@ let bgmProfile: BgmProfile | null = null;
 let bgmIntensity = 1;
 let userVolume = 0.72;
 let muted = false;
+const noiseBufferCache = new Map<string, AudioBuffer>();
 
 type GameSfx = 'select' | 'bomb' | 'blast' | 'powerup' | 'door' | 'hit' | 'kick' | 'step' | 'shoot' | 'score' | 'warning' | 'level';
 type BgmProfile = 'ocean' | 'lightbomb' | 'city' | 'snake';
@@ -76,10 +77,15 @@ function playTone(
 function playNoise(start: number, duration: number, volume: number, frequency: number, type: BiquadFilterType) {
   if (!audioContext || !masterGain) return;
   const length = Math.max(1, Math.floor(audioContext.sampleRate * duration));
-  const buffer = audioContext.createBuffer(1, length, audioContext.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < length; i += 1) {
-    data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+  const key = `${audioContext.sampleRate}-${length}`;
+  let buffer = noiseBufferCache.get(key);
+  if (!buffer) {
+    buffer = audioContext.createBuffer(1, length, audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i += 1) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+    }
+    noiseBufferCache.set(key, buffer);
   }
   const source = audioContext.createBufferSource();
   const filter = audioContext.createBiquadFilter();

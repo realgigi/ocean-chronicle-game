@@ -2232,7 +2232,7 @@ button:disabled {
   left: 0;
   top: 0;
   will-change: transform;
-  transition: transform calc(var(--snake-step-ms, 190ms) * 0.76) cubic-bezier(0.22, 0.8, 0.28, 1);
+  transition: transform calc(var(--snake-step-ms, 190ms) * 1.04) linear;
   background:
     linear-gradient(120deg, rgba(255, 222, 110, 0.08), transparent 24%, rgba(113, 236, 202, 0.09) 58%, transparent 78%),
     linear-gradient(180deg, rgba(13, 68, 70, 0.98), rgba(5, 26, 39, 0.98));
@@ -2417,7 +2417,7 @@ button:disabled {
     drop-shadow(0 7px 10px rgba(0, 0, 0, 0.3))
     drop-shadow(0 0 12px rgba(255, 228, 127, 0.5));
   transform: translate3d(var(--snake-x, 0px), var(--snake-y, 0px), 0) translate(-50%, -50%) rotate(var(--snake-rotate));
-  transition: transform var(--snake-step-ms, 190ms) linear, filter 120ms linear;
+  transition: transform calc(var(--snake-step-ms, 190ms) * 1.04) linear, filter 120ms linear;
   will-change: transform;
 }
 
@@ -2496,7 +2496,7 @@ button:disabled {
     0 0 0 2px rgba(255, 239, 168, 0.16),
     0 0 14px rgba(116, 242, 209, 0.46);
   transform: translate3d(var(--snake-x, 0px), var(--snake-y, 0px), 0) translate(-50%, -50%);
-  transition: transform var(--snake-step-ms, 190ms) linear, opacity var(--snake-step-ms, 190ms) linear;
+  transition: transform calc(var(--snake-step-ms, 190ms) * 1.04) linear, opacity calc(var(--snake-step-ms, 190ms) * 1.04) linear;
   will-change: transform;
 }
 
@@ -2559,7 +2559,7 @@ button:disabled {
   top: 0;
   pointer-events: none;
   transform: translate3d(var(--snake-x, 0px), var(--snake-y, 0px), 0) translate(-50%, -50%) rotate(var(--snake-rotate, 0deg));
-  transition: transform var(--snake-step-ms, 190ms) linear, opacity var(--snake-step-ms, 190ms) linear, filter 120ms linear;
+  transition: transform calc(var(--snake-step-ms, 190ms) * 1.04) linear, opacity calc(var(--snake-step-ms, 190ms) * 1.04) linear, filter 120ms linear;
   will-change: transform;
 }
 
@@ -4852,9 +4852,18 @@ button:disabled {
   height: calc(var(--breakthrough-cell-px) * 1.12);
   display: grid;
   place-items: center;
-  transform: translate(-50%, -50%);
   pointer-events: none;
   border-radius: 50%;
+}
+
+.breakthrough-player,
+.breakthrough-enemy,
+.breakthrough-shot,
+.breakthrough-powerup {
+  left: 0;
+  top: 0;
+  transform: translate3d(var(--bt-x, 0px), var(--bt-y, 0px), 0) translate(-50%, -50%);
+  will-change: transform;
 }
 
 .breakthrough-player {
@@ -5054,7 +5063,6 @@ button:disabled {
   width: calc(var(--breakthrough-cell-px) * 0.36);
   height: calc(var(--breakthrough-cell-px) * 0.36);
   border-radius: 50%;
-  transform: translate(-50%, -50%);
   background:
     radial-gradient(circle at 34% 28%, #fff 0 18%, #ffe585 19% 45%, rgba(81, 224, 236, 0.78) 46% 72%, transparent 73%);
   box-shadow: 0 0 10px rgba(111, 234, 243, 0.72);
@@ -5146,7 +5154,19 @@ button:disabled {
 }
 
 .breakthrough-powerup {
-  transform: translate(-50%, -50%);
+  animation: breakthroughPowerup 1s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes breakthroughPowerup {
+  0%,
+  100% {
+    transform: translate3d(var(--bt-x, 0px), var(--bt-y, 0px), 0) translate(-50%, -50%) scale(0.92);
+  }
+
+  50% {
+    transform: translate3d(var(--bt-x, 0px), var(--bt-y, 0px), 0) translate(-50%, -50%) scale(1.18);
+  }
 }
 
 .breakthrough-hud {
