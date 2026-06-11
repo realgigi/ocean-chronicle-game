@@ -5308,7 +5308,7 @@ button:disabled {
   min-height: 0;
   display: grid;
   place-items: stretch;
-  padding: max(96px, calc(env(safe-area-inset-top) + 88px)) 0 calc(150px + env(safe-area-inset-bottom));
+  padding: max(96px, calc(env(safe-area-inset-top) + 88px)) 0 calc(170px + env(safe-area-inset-bottom));
   overflow: hidden;
   touch-action: none;
 }
@@ -5807,98 +5807,77 @@ button:disabled {
 .lightbomb-controls {
   position: absolute;
   z-index: 23;
-  left: max(20px, calc(env(safe-area-inset-left) + 6px));
+  left: max(16px, calc(env(safe-area-inset-left) + 6px));
   bottom: max(12px, calc(env(safe-area-inset-bottom) + 4px));
-  width: 124px;
-  height: 124px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(255, 230, 132, 0.22) 0 17%, transparent 18% 38%, rgba(102, 229, 235, 0.12) 39% 43%, transparent 44%),
-    radial-gradient(circle at 50% 52%, rgba(16, 75, 80, 0.82), rgba(4, 22, 39, 0.74) 68%, rgba(6, 17, 31, 0.36) 72%);
-  box-shadow:
-    inset 0 0 0 1px rgba(178, 232, 244, 0.24),
-    inset 0 0 22px rgba(103, 235, 238, 0.1),
-    0 12px 24px rgba(0, 0, 0, 0.32);
+  width: 154px;
+  height: 154px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 5px;
   touch-action: none;
   user-select: none;
 }
 
-.lightbomb-stick-base,
-.lightbomb-stick,
-.lightbomb-stick-arrow {
-  position: absolute;
+.lightbomb-pad-button {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 14px;
+  color: rgba(235, 254, 255, 0.94);
+  background:
+    radial-gradient(circle at 34% 24%, rgba(255, 255, 255, 0.42), transparent 24%),
+    linear-gradient(135deg, rgba(18, 98, 108, 0.9), rgba(4, 26, 44, 0.86));
+  box-shadow:
+    0 8px 16px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(178, 232, 244, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  touch-action: none;
+  user-select: none;
+}
+
+.lightbomb-pad-button svg {
   pointer-events: none;
 }
 
-.lightbomb-stick-base {
-  inset: 23px;
-  border-radius: 50%;
+.lightbomb-pad-button.up {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.lightbomb-pad-button.left {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.lightbomb-pad-button.right {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.lightbomb-pad-button.down {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.lightbomb-controls.active-up .lightbomb-pad-button.up,
+.lightbomb-controls.active-left .lightbomb-pad-button.left,
+.lightbomb-controls.active-right .lightbomb-pad-button.right,
+.lightbomb-controls.active-down .lightbomb-pad-button.down,
+.lightbomb-pad-button:active {
+  color: #1b1608;
   background:
-    linear-gradient(135deg, rgba(255, 232, 128, 0.12), transparent 45%),
-    rgba(5, 28, 43, 0.54);
+    radial-gradient(circle at 34% 24%, rgba(255, 255, 255, 0.74), transparent 24%),
+    linear-gradient(135deg, rgba(255, 232, 126, 0.98), rgba(91, 230, 236, 0.96));
   box-shadow:
-    inset 0 0 0 1px rgba(185, 236, 244, 0.22),
-    inset 0 0 18px rgba(0, 0, 0, 0.22);
-}
-
-.lightbomb-stick {
-  left: 50%;
-  top: 50%;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 34% 27%, rgba(255, 255, 255, 0.9), transparent 22%),
-    linear-gradient(135deg, rgba(255, 231, 127, 0.98), rgba(92, 229, 235, 0.94));
-  box-shadow:
-    0 8px 16px rgba(0, 0, 0, 0.34),
-    0 0 0 2px rgba(255, 232, 130, 0.26),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.46);
-  transform: translate(calc(-50% + var(--pad-x, 0px)), calc(-50% + var(--pad-y, 0px)));
-  transition: transform 70ms linear;
-}
-
-.lightbomb-controls.active-up .lightbomb-stick,
-.lightbomb-controls.active-left .lightbomb-stick,
-.lightbomb-controls.active-right .lightbomb-stick,
-.lightbomb-controls.active-down .lightbomb-stick {
-  box-shadow:
-    0 8px 16px rgba(0, 0, 0, 0.36),
-    0 0 18px rgba(111, 236, 244, 0.54),
-    0 0 0 2px rgba(255, 232, 130, 0.32),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.48);
-}
-
-.lightbomb-stick-arrow {
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  color: rgba(231, 254, 255, 0.72);
-}
-
-.lightbomb-stick-arrow.up {
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.lightbomb-stick-arrow.down {
-  bottom: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.lightbomb-stick-arrow.left {
-  left: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.lightbomb-stick-arrow.right {
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
+    0 8px 18px rgba(0, 0, 0, 0.34),
+    0 0 18px rgba(109, 236, 244, 0.58),
+    0 0 0 2px rgba(255, 232, 130, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.42);
 }
 
 .lightbomb-action {

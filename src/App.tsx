@@ -73,7 +73,7 @@ const sceneVersions: Record<PlayableScene, string> = {
   tower: 'v1.4',
   city: 'v2.5',
   breakthrough: 'v1.7',
-  lightbomb: 'v2.5',
+  lightbomb: 'v2.6',
   revelation: 'v1.8',
 };
 const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
@@ -764,8 +764,6 @@ type GridDebugItem = {
   value: string | number | boolean;
 };
 type LightBombPadIntent = DirectionPadIntent;
-type LightBombPadVector = DirectionPadVector;
-type LightBombPadInput = DirectionPadInput;
 type BreakoutPowerupKind = 'split2' | 'gun' | 'split5' | 'giant' | 'grow' | 'wide' | 'narrow';
 
 type BreakoutPowerup = {
@@ -2624,11 +2622,6 @@ function createLightBombEnemy(id: number, kind: LightBombEnemyKind, row: number,
     dir: lightBombDirections[Math.floor(Math.random() * lightBombDirections.length)],
     moveAt: performance.now() + (650 + Math.random() * 850) * config.enemyDelayScale,
   };
-}
-
-function lightBombPadVectorFromDirection(direction: CityDirection): LightBombPadVector {
-  const vector = cityDirectionVector(direction);
-  return { x: vector.x * 31, y: vector.y * 31 };
 }
 
 function createLightBombLevel(config = lightBombLevelConfig(1)): LightBombLevel {
@@ -7931,7 +7924,6 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
   const [exitVisible, setExitVisible] = useState(false);
   const [status, setStatus] = useState<LightBombStatus>('select');
   const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
-  const [padVector, setPadVector] = useState<LightBombPadVector>({ x: 0, y: 0 });
   const [notice, setNotice] = useState<LightBombNotice>(null);
 
   const showNotice = useCallback((kind: NonNullable<LightBombNotice>['kind'], text: string) => {
@@ -7975,7 +7967,6 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
     setExitVisible(false);
     setStatus('playing');
     setPadDirection(null);
-    setPadVector({ x: 0, y: 0 });
     setOceanBgmIntensity(config.musicIntensity);
     showNotice('door', options.notice ?? config.title);
   }, [showNotice]);
@@ -8005,7 +7996,6 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
     setStatus('select');
     setSelectedCharacter(null);
     setPadDirection(null);
-    setPadVector({ x: 0, y: 0 });
     setNotice(null);
     setOceanBgmIntensity(1);
   }, []);
@@ -8119,29 +8109,6 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
     playGameSfx('bomb');
   }, []);
 
-  const inputFromPad = useCallback((clientX: number, clientY: number, target: HTMLElement): LightBombPadInput => {
-    const rect = target.getBoundingClientRect();
-    const dx = clientX - (rect.left + rect.width / 2);
-    const dy = clientY - (rect.top + rect.height / 2);
-    const size = Math.min(rect.width, rect.height);
-    const distance = Math.hypot(dx, dy);
-    if (distance < size * 0.13) return { intent: null, vector: { x: 0, y: 0 } };
-    const maxOffset = size * 0.28;
-    const vectorScale = distance > maxOffset ? maxOffset / distance : 1;
-    const vector = { x: dx * vectorScale, y: dy * vectorScale };
-    const horizontal: CityDirection = dx > 0 ? 'right' : 'left';
-    const vertical: CityDirection = dy > 0 ? 'down' : 'up';
-    const absX = Math.abs(dx);
-    const absY = Math.abs(dy);
-    let intent: LightBombPadIntent;
-    if (absX > absY * 1.8) intent = { primary: horizontal };
-    else if (absY > absX * 1.8) intent = { primary: vertical };
-    else intent = absX >= absY
-      ? { primary: horizontal, secondary: vertical }
-      : { primary: vertical, secondary: horizontal };
-    return { intent, vector };
-  }, []);
-
   const tryMoveIntent = useCallback((intent: LightBombPadIntent) => {
     if (!intent) return false;
     if (tryMovePlayer(intent.primary)) return true;
@@ -8149,12 +8116,11 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
     return false;
   }, [tryMovePlayer]);
 
-  const holdDirection = useCallback((intent: LightBombPadIntent, vector: LightBombPadVector = { x: 0, y: 0 }) => {
+  const holdDirection = useCallback((intent: LightBombPadIntent) => {
     const wasHolding = heldDirectionRef.current !== null;
     const sameIntent = directionPadIntentsEqual(heldDirectionRef.current, intent);
     heldDirectionRef.current = intent;
     setPadDirection(intent?.primary ?? null);
-    setPadVector(intent ? vector : { x: 0, y: 0 });
     if (!intent) {
       nextPlayerMoveAtRef.current = Number.POSITIVE_INFINITY;
       return;
@@ -8175,16 +8141,19 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
     }
   }, [tryMoveIntent]);
 
-  const updatePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const input = inputFromPad(event.clientX, event.clientY, event.currentTarget);
-    holdDirection(input.intent, input.vector);
-  }, [inputFromPad, holdDirection]);
-
-  const releasePad = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
+  const releasePad = useCallback((event?: ReactPointerEvent<HTMLElement>) => {
     if (event && movePointerRef.current !== null && movePointerRef.current !== event.pointerId) return;
     movePointerRef.current = null;
     holdDirection(null);
+  }, [holdDirection]);
+
+  const pressPadButton = useCallback((event: ReactPointerEvent<HTMLButtonElement>, direction: CityDirection) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (movePointerRef.current !== null) return;
+    movePointerRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    holdDirection({ primary: direction });
   }, [holdDirection]);
 
   useGlobalControlReset(releasePad);
@@ -8226,7 +8195,7 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
       const key = event.key.toLowerCase();
       const direction = event.key === 'ArrowUp' || key === 'w' ? 'up' : event.key === 'ArrowDown' || key === 's' ? 'down' : event.key === 'ArrowLeft' || key === 'a' ? 'left' : event.key === 'ArrowRight' || key === 'd' ? 'right' : null;
       if (direction) {
-        if (statusRef.current === 'playing') holdDirection({ primary: direction }, lightBombPadVectorFromDirection(direction));
+        if (statusRef.current === 'playing') holdDirection({ primary: direction });
         event.preventDefault();
       }
       if (event.key === ' ' || key === 'j' || key === 'k') {
@@ -8483,10 +8452,6 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
   const bombCountdown = (bomb: LightBombBomb) => (
     bomb.remote ? 0 : Math.max(0, Math.ceil((bomb.explodeAt - lightBombRenderTime) / 1000))
   );
-  const padStickStyle: CSSProperties = {
-    ['--pad-x' as string]: `${padVector.x}px`,
-    ['--pad-y' as string]: `${padVector.y}px`,
-  };
   const currentLevelConfig = lightBombLevelConfig(stage);
   const currentCharacter = lightBombCharacterDef(player.character);
   const lightBombDebugItems: GridDebugItem[] = [
@@ -8606,28 +8571,47 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
             </div>
           )}
         </div>
-        <div
-          className={`lightbomb-controls ${padDirection ? `active-${padDirection}` : ''}`}
-          aria-label="方向控制"
-          onPointerDown={(event) => {
-            if (movePointerRef.current !== null) return;
-            movePointerRef.current = event.pointerId;
-            event.currentTarget.setPointerCapture(event.pointerId);
-            updatePad(event);
-          }}
-          onPointerMove={(event) => {
-            if (movePointerRef.current === event.pointerId) updatePad(event);
-          }}
-          onPointerUp={releasePad}
-          onPointerCancel={releasePad}
-          onLostPointerCapture={releasePad}
-        >
-          <span className="lightbomb-stick-base" />
-          <span className="lightbomb-stick-arrow up"><ChevronUp size={14} /></span>
-          <span className="lightbomb-stick-arrow left"><ChevronLeft size={14} /></span>
-          <span className="lightbomb-stick-arrow right"><ChevronRight size={14} /></span>
-          <span className="lightbomb-stick-arrow down"><ChevronDown size={14} /></span>
-          <span className="lightbomb-stick" style={padStickStyle} />
+        <div className={`lightbomb-controls lightbomb-dpad ${padDirection ? `active-${padDirection}` : ''}`} aria-label="方向控制">
+          <button
+            className="lightbomb-pad-button up"
+            onPointerDown={(event) => pressPadButton(event, 'up')}
+            onPointerUp={releasePad}
+            onPointerCancel={releasePad}
+            onLostPointerCapture={releasePad}
+            aria-label="向上"
+          >
+            <ChevronUp size={24} />
+          </button>
+          <button
+            className="lightbomb-pad-button left"
+            onPointerDown={(event) => pressPadButton(event, 'left')}
+            onPointerUp={releasePad}
+            onPointerCancel={releasePad}
+            onLostPointerCapture={releasePad}
+            aria-label="向左"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <button
+            className="lightbomb-pad-button right"
+            onPointerDown={(event) => pressPadButton(event, 'right')}
+            onPointerUp={releasePad}
+            onPointerCancel={releasePad}
+            onLostPointerCapture={releasePad}
+            aria-label="向右"
+          >
+            <ChevronRight size={24} />
+          </button>
+          <button
+            className="lightbomb-pad-button down"
+            onPointerDown={(event) => pressPadButton(event, 'down')}
+            onPointerUp={releasePad}
+            onPointerCancel={releasePad}
+            onLostPointerCapture={releasePad}
+            aria-label="向下"
+          >
+            <ChevronDown size={24} />
+          </button>
         </div>
         <button
           className={`lightbomb-action ${remote ? 'remote' : ''}`}
