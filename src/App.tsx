@@ -73,7 +73,7 @@ const sceneVersions: Record<PlayableScene, string> = {
   tower: 'v1.4',
   city: 'v2.5',
   breakthrough: 'v1.7',
-  lightbomb: 'v2.4',
+  lightbomb: 'v2.5',
   revelation: 'v1.8',
 };
 const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
@@ -8480,6 +8480,9 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
   const lightBombRenderTime = performance.now();
   const shielded = player.shieldUntil > lightBombRenderTime;
   const remote = player.remoteUntil > lightBombRenderTime;
+  const bombCountdown = (bomb: LightBombBomb) => (
+    bomb.remote ? 0 : Math.max(0, Math.ceil((bomb.explodeAt - lightBombRenderTime) / 1000))
+  );
   const padStickStyle: CSSProperties = {
     ['--pad-x' as string]: `${padVector.x}px`,
     ['--pad-y' as string]: `${padVector.y}px`,
@@ -8577,7 +8580,9 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
               </span>
             ))}
             {bombs.map((bomb) => (
-              <span className={`lightbomb-bomb ${bomb.remote ? 'remote' : ''} ${bomb.piercing ? 'piercing' : ''} ${bomb.kickedDir ? 'sliding' : ''}`} key={bomb.id} style={lightBombTokenStyle(bomb.x, bomb.y)} />
+              <span className={`lightbomb-bomb ${bomb.remote ? 'remote' : ''} ${bomb.piercing ? 'piercing' : ''} ${bomb.kickedDir ? 'sliding' : ''}`} key={bomb.id} style={lightBombTokenStyle(bomb.x, bomb.y)}>
+                <i className="lightbomb-bomb-count">{bombCountdown(bomb)}</i>
+              </span>
             ))}
             {explosions.map((explosion) => <span className="lightbomb-explosion" key={explosion.id} style={lightBombCellStyle(explosion.row, explosion.col)} />)}
             {enemies.map((enemy) => (

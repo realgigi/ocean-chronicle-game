@@ -5613,7 +5613,10 @@ button:disabled {
   z-index: 10;
   width: calc(var(--bomb-cell-px) * 0.9);
   height: calc(var(--bomb-cell-px) * 0.9);
+  display: grid;
+  place-items: center;
   border-radius: 50%;
+  color: #071724;
   background:
     radial-gradient(circle at 35% 27%, rgba(255, 255, 255, 0.95), rgba(255, 239, 155, 0.85) 17%, rgba(77, 223, 230, 0.82) 48%, rgba(30, 52, 96, 0.96) 70%),
     conic-gradient(from 0deg, rgba(255, 233, 112, 0.9), rgba(94, 236, 244, 0.92), rgba(180, 116, 255, 0.9), rgba(255, 233, 112, 0.9));
@@ -5623,10 +5626,35 @@ button:disabled {
   animation: lightBombPulse 0.75s ease-in-out infinite;
 }
 
+.lightbomb-bomb-count {
+  min-width: calc(var(--bomb-cell-px) * 0.42);
+  height: calc(var(--bomb-cell-px) * 0.42);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 248, 201, 0.88);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.46),
+    0 0 8px rgba(255, 236, 128, 0.5);
+  font-size: calc(var(--bomb-cell-px) * 0.34);
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
 .lightbomb-bomb.remote {
   box-shadow:
     0 0 0 2px rgba(255, 239, 146, 0.24),
     0 0 20px rgba(194, 136, 255, 0.82);
+}
+
+.lightbomb-bomb.remote .lightbomb-bomb-count {
+  color: #251233;
+  background: rgba(239, 218, 255, 0.9);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.46),
+    0 0 9px rgba(207, 145, 255, 0.58);
 }
 
 .lightbomb-bomb.piercing {
