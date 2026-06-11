@@ -73,7 +73,7 @@ const sceneVersions: Record<PlayableScene, string> = {
   tower: 'v1.4',
   city: 'v2.5',
   breakthrough: 'v1.7',
-  lightbomb: 'v2.6',
+  lightbomb: 'v2.7',
   revelation: 'v1.8',
 };
 const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
@@ -8002,7 +8002,10 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
 
   useEffect(() => {
     const arena = arenaRef.current;
-    if (!arena) return;
+    if (!arena) {
+      setArenaSize({ width: 0, height: 0 });
+      return;
+    }
     const updateSize = () => {
       const rect = (viewportRef.current ?? arena).getBoundingClientRect();
       setArenaSize({ width: rect.width, height: rect.height });
@@ -8012,7 +8015,7 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
     observer.observe(arena);
     if (viewportRef.current) observer.observe(viewportRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [status]);
 
   const canEnterCell = useCallback((row: number, col: number, bombs: LightBombBomb[], enemies: LightBombEnemy[], ignoreEnemyId?: number) => {
     if (row < 0 || col < 0 || row >= lightBombRows || col >= lightBombCols) return false;
@@ -8433,18 +8436,19 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
   const cellPx = Math.max(17, Math.min((arenaSize.width || 360) / lightBombViewCols, (arenaSize.height || 520) / lightBombViewRows));
   const renderViewCols = Math.max(1, (arenaSize.width || cellPx * lightBombViewCols) / cellPx);
   const renderViewRows = Math.max(1, (arenaSize.height || cellPx * lightBombViewRows) / cellPx);
-  const worldPx = cellPx * lightBombCols;
+  const worldWidth = cellPx * lightBombCols;
+  const worldHeight = cellPx * lightBombRows;
   const camera = {
-    x: clamp(player.x - renderViewCols / 2, 0, Math.max(0, lightBombCols - renderViewCols)),
-    y: clamp(player.y - renderViewRows / 2, 0, Math.max(0, lightBombRows - renderViewRows)),
+    x: clamp(player.x + 0.5 - renderViewCols / 2, 0, Math.max(0, lightBombCols - renderViewCols)),
+    y: clamp(player.y + 0.5 - renderViewRows / 2, 0, Math.max(0, lightBombRows - renderViewRows)),
   };
   const viewportStyle: CSSProperties = {
     ['--bomb-cell-px' as string]: `${cellPx}px`,
   };
   const worldStyle: CSSProperties = {
-    width: `${worldPx}px`,
-    height: `${worldPx}px`,
-    transform: `translate(${-camera.x * cellPx}px, ${-camera.y * cellPx}px)`,
+    width: `${worldWidth}px`,
+    height: `${worldHeight}px`,
+    transform: `translate3d(${-camera.x * cellPx}px, ${-camera.y * cellPx}px, 0)`,
   };
   const lightBombRenderTime = performance.now();
   const shielded = player.shieldUntil > lightBombRenderTime;
