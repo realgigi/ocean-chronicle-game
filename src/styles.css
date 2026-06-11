@@ -5971,7 +5971,7 @@ button:disabled {
   min-height: 0;
   display: grid;
   place-items: stretch;
-  padding: 0;
+  padding: 36px 8px calc(152px + env(safe-area-inset-bottom));
   overflow: hidden;
   touch-action: none;
 }
@@ -5980,6 +5980,10 @@ button:disabled {
   position: relative;
   overflow: hidden;
   background: #061928;
+  border-radius: 8px;
+  box-shadow:
+    0 14px 28px rgba(0, 0, 0, 0.28),
+    inset 0 0 0 1px rgba(192, 242, 255, 0.16);
 }
 
 .revelation-viewport::after {
@@ -5997,6 +6001,13 @@ button:disabled {
   box-shadow:
     inset 0 0 0 3px rgba(255, 230, 125, 0.46),
     inset 0 0 28px rgba(255, 84, 138, 0.34);
+}
+
+.revelation-viewport.retracting::after {
+  background: radial-gradient(circle at 50% 50%, transparent 54%, rgba(125, 235, 255, 0.14) 100%);
+  box-shadow:
+    inset 0 0 0 3px rgba(137, 239, 255, 0.48),
+    inset 0 0 28px rgba(120, 222, 255, 0.28);
 }
 
 .revelation-viewport.safe .revelation-shot {
@@ -6086,6 +6097,12 @@ button:disabled {
     drop-shadow(0 0 18px rgba(255, 238, 133, 0.82));
 }
 
+.revelation-player.retracting {
+  filter:
+    drop-shadow(0 8px 12px rgba(0, 0, 0, 0.36))
+    drop-shadow(0 0 18px rgba(124, 239, 255, 0.82));
+}
+
 .revelation-player.shielded {
   border-radius: 50%;
   box-shadow:
@@ -6095,9 +6112,51 @@ button:disabled {
 
 .revelation-player img,
 .revelation-enemy img {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.revelation-orb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 0;
+  width: 32%;
+  height: 32%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.98), rgba(255, 238, 145, 0.9) 32%, rgba(98, 232, 255, 0.88) 74%);
+  box-shadow:
+    0 0 10px rgba(255, 241, 158, 0.9),
+    0 0 18px rgba(111, 237, 255, 0.72);
+  animation: revelationOrbPulse 780ms ease-in-out infinite;
+}
+
+.revelation-orb.orb-0 {
+  transform: translate(-50%, -50%) translateY(-132%);
+}
+
+.revelation-orb.orb-1 {
+  transform: translate(-50%, -50%) translate(114%, -66%);
+}
+
+.revelation-orb.orb-2 {
+  transform: translate(-50%, -50%) translate(114%, 66%);
+}
+
+.revelation-orb.orb-3 {
+  transform: translate(-50%, -50%) translateY(132%);
+}
+
+.revelation-orb.orb-4 {
+  transform: translate(-50%, -50%) translate(-114%, 66%);
+}
+
+.revelation-orb.orb-5 {
+  transform: translate(-50%, -50%) translate(-114%, -66%);
 }
 
 .revelation-enemy {
@@ -6196,6 +6255,14 @@ button:disabled {
   animation: snakeInvincibleBlink 320ms steps(2, end) infinite;
 }
 
+.revelation-hud .retract {
+  color: #061928;
+  background: linear-gradient(135deg, rgba(153, 239, 255, 0.96), rgba(255, 247, 177, 0.9));
+  box-shadow:
+    inset 0 0 0 1px rgba(238, 254, 255, 0.32),
+    0 0 16px rgba(112, 235, 255, 0.32);
+}
+
 .revelation-notice {
   position: absolute;
   z-index: 25;
@@ -6256,7 +6323,7 @@ button:disabled {
   position: absolute;
   z-index: 23;
   left: max(20px, calc(env(safe-area-inset-left) + 6px));
-  bottom: max(18px, calc(env(safe-area-inset-bottom) + 4px));
+  bottom: max(12px, calc(env(safe-area-inset-bottom) + 4px));
   width: 124px;
   height: 124px;
   border-radius: 50%;
@@ -6353,7 +6420,7 @@ button:disabled {
   position: absolute;
   z-index: 23;
   right: max(22px, env(safe-area-inset-right));
-  bottom: max(34px, calc(env(safe-area-inset-bottom) + 20px));
+  bottom: max(24px, calc(env(safe-area-inset-bottom) + 16px));
   width: 70px;
   height: 70px;
   display: grid;
@@ -6385,13 +6452,14 @@ button:disabled {
 
 .revelation-action small {
   position: absolute;
-  right: 13px;
-  bottom: 12px;
-  min-width: 18px;
+  right: 8px;
+  bottom: 8px;
+  min-width: 28px;
   min-height: 18px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  padding: 0 4px;
+  border-radius: 999px;
   color: #071522;
   background: rgba(255, 255, 255, 0.82);
   font-size: 11px;
@@ -6452,6 +6520,19 @@ button:disabled {
   50% {
     opacity: 1;
     filter: brightness(1.22);
+  }
+}
+
+@keyframes revelationOrbPulse {
+  0%,
+  100% {
+    opacity: 0.82;
+    filter: brightness(1);
+  }
+
+  50% {
+    opacity: 1;
+    filter: brightness(1.28);
   }
 }
 

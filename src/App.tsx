@@ -74,7 +74,7 @@ const sceneVersions: Record<PlayableScene, string> = {
   city: 'v2.5',
   breakthrough: 'v1.7',
   lightbomb: 'v2.2',
-  revelation: 'v1.6',
+  revelation: 'v1.7',
 };
 const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
   combat: [900, 1300, 1500],
@@ -729,11 +729,12 @@ type RevelationPlayer = {
   safeY: number;
   dir: CityDirection;
   drawing: boolean;
+  retracting: boolean;
   shieldUntil: number;
   speedUntil: number;
   slowUntil: number;
   freezeUntil: number;
-  pulseCharges: number;
+  orbitCharges: number;
 };
 type RevelationNoticeKind = RevelationPowerKind | 'hit' | 'seal';
 type RevelationNotice = {
@@ -1496,23 +1497,25 @@ const revelationRows = 72;
 const revelationSafeBorder = 2;
 const revelationTargetPercent = 72;
 const revelationTimeLimitMs = 165000;
+const revelationRetractSpeed = 19.5;
+const revelationOrbitMax = 6;
 const revelationStart = { col: Math.floor(revelationCols / 2), row: revelationRows - revelationSafeBorder };
 const revelationEnemyKinds: RevelationEnemyKind[] = ['jellyfish', 'urchin', 'squid', 'anemone', 'urchin', 'squid', 'anemone', 'urchin', 'squid', 'anemone'];
 const revelationPowerKinds: RevelationPowerKind[] = ['speed', 'freeze', 'reveal', 'shield', 'slow', 'life', 'freeze', 'reveal', 'speed', 'shield'];
 const revelationPowerLabels: Record<RevelationPowerKind, string> = {
   speed: '速',
-  freeze: '定',
+  freeze: '彈',
   reveal: '星',
   shield: '盾',
   slow: '緩',
   life: '命',
 };
 const revelationPowerText: Record<RevelationPowerKind, string> = {
-  speed: '王子加速',
-  freeze: '凝光脈衝 +1',
-  reveal: '星點開圖',
-  shield: '冰晶護盾',
-  slow: '敵群緩速',
+  speed: '王子加速延長',
+  freeze: '護身光彈 +2',
+  reveal: '星點開圖擴張',
+  shield: '冰晶護盾延長',
+  slow: '敵群緩速延長',
   life: '命數 +1',
 };
 
@@ -1544,6 +1547,27 @@ function revelationCellIsClaimed(grid: boolean[][], col: number, row: number) {
   return grid[row]?.[col] ?? true;
 }
 
+function revelationCellInBounds(col: number, row: number) {
+  return row >= 0 && col >= 0 && row < revelationRows && col < revelationCols;
+}
+
+function revelationCellIsBoundary(grid: boolean[][], col: number, row: number) {
+  if (!revelationCellInBounds(col, row) || !revelationCellIsClaimed(grid, col, row)) return false;
+  return [
+    { col: col + 1, row },
+    { col: col - 1, row },
+    { col, row: row + 1 },
+    { col, row: row - 1 },
+  ].some((neighbor) => revelationCellInBounds(neighbor.col, neighbor.row) && !revelationCellIsClaimed(grid, neighbor.col, neighbor.row));
+}
+
+function revelationCellCenter(cell: RevelationCell) {
+  return {
+    x: cell.col + 0.5,
+    y: cell.row + 0.5,
+  };
+}
+
 function revelationPositionCell(x: number, y: number): RevelationCell {
   return {
     col: clamp(Math.floor(x), 0, revelationCols - 1),
@@ -1569,11 +1593,12 @@ function createRevelationPlayer(): RevelationPlayer {
     safeY: revelationStart.row + 0.5,
     dir: 'up',
     drawing: false,
+    retracting: false,
     shieldUntil: 0,
     speedUntil: 0,
     slowUntil: 0,
     freezeUntil: 0,
-    pulseCharges: 0,
+    orbitCharges: 0,
   };
 }
 
@@ -1646,9 +1671,9 @@ function createRevelationPowerups(grid: boolean[][], enemies: RevelationEnemy[])
 
 function claimRevelationDots(grid: boolean[][], enemies: RevelationEnemy[]) {
   const nextGrid = grid.map((row) => [...row]);
-  for (let dot = 0; dot < 5; dot += 1) {
+  for (let dot = 0; dot < 8; dot += 1) {
     const center = randomRevelationOpenCell(nextGrid, enemies, 5);
-    const radius = randomInt(2, 3);
+    const radius = randomInt(2, 4);
     for (let row = center.row - radius; row <= center.row + radius; row += 1) {
       for (let col = center.col - radius; col <= center.col + radius; col += 1) {
         if (
@@ -8612,10 +8637,14 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
 
 function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onComplete: GameCompleteHandler }) {
   const arenaRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const pausedRef = useGamePausedRef();
   const rafRef = useRef<number | null>(null);
   const movePointerRef = useRef<number | null>(null);
+  const claimPointerRef = useRef<number | null>(null);
   const moveIntentRef = useRef<DirectionPadIntent>(null);
+  const claimHeldRef = useRef(false);
+  const retractPathRef = useRef<RevelationCell[]>([]);
   const lastTickRef = useRef(0);
   const remainingRef = useRef(revelationTimeLimitMs);
   const noticeIdRef = useRef(1);
@@ -8645,6 +8674,7 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
   const [arenaSize, setArenaSize] = useState({ width: 0, height: 0 });
   const [padDirection, setPadDirection] = useState<CityDirection | null>(null);
   const [padVector, setPadVector] = useState<DirectionPadVector>({ x: 0, y: 0 });
+  const [claimPressed, setClaimPressed] = useState(false);
 
   const showNotice = useCallback((text: string, kind: RevelationNoticeKind = 'seal') => {
     if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
@@ -8720,6 +8750,9 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     const nextEnemies = createRevelationEnemies(nextClaimed);
     const nextPlayer = createRevelationPlayer();
     completionReported.current = false;
+    claimHeldRef.current = false;
+    claimPointerRef.current = null;
+    retractPathRef.current = [];
     syncGame({
       claimed: nextClaimed,
       player: nextPlayer,
@@ -8734,7 +8767,26 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     moveIntentRef.current = null;
     setPadDirection(null);
     setPadVector({ x: 0, y: 0 });
+    setClaimPressed(false);
     showNotice('封印板待命', 'seal');
+  }, [showNotice, syncGame]);
+
+  const beginTrailRetreat = useCallback((message = '封線回收') => {
+    const currentPlayer = playerRef.current;
+    if (!currentPlayer.drawing && !currentPlayer.retracting) return;
+    const trailCells = trailRef.current;
+    const safeCell = revelationPositionCell(currentPlayer.safeX, currentPlayer.safeY);
+    retractPathRef.current = trailCells.length > 0 ? [...trailCells].reverse() : [safeCell];
+    syncGame({
+      player: {
+        ...currentPlayer,
+        drawing: false,
+        retracting: true,
+      },
+      trail: trailCells,
+    });
+    playGameSfx('select');
+    showNotice(message, 'seal');
   }, [showNotice, syncGame]);
 
   const resetAfterHit = useCallback((time: number) => {
@@ -8745,8 +8797,10 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
         x: currentPlayer.safeX,
         y: currentPlayer.safeY,
         drawing: false,
+        retracting: false,
         shieldUntil: 0,
       };
+      retractPathRef.current = [];
       syncGame({ player: nextPlayer, trail: [], shots: [] });
       playGameSfx('hit');
       showNotice('護盾擋下裂縫', 'shield');
@@ -8755,10 +8809,14 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     const nextLives = livesRef.current - 1;
     const nextPlayer = {
       ...createRevelationPlayer(),
-      pulseCharges: currentPlayer.pulseCharges,
+      orbitCharges: currentPlayer.orbitCharges,
+      speedUntil: currentPlayer.speedUntil,
       freezeUntil: currentPlayer.freezeUntil,
       slowUntil: currentPlayer.slowUntil,
     };
+    claimHeldRef.current = false;
+    claimPointerRef.current = null;
+    retractPathRef.current = [];
     syncGame({
       player: nextPlayer,
       trail: [],
@@ -8769,26 +8827,9 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     moveIntentRef.current = null;
     setPadDirection(null);
     setPadVector({ x: 0, y: 0 });
+    setClaimPressed(false);
     playGameSfx('hit');
     showNotice(nextLives > 0 ? '封線碎裂' : '封印失敗', 'hit');
-  }, [showNotice, syncGame]);
-
-  const retractOwnTrail = useCallback(() => {
-    const currentPlayer = playerRef.current;
-    syncGame({
-      player: {
-        ...currentPlayer,
-        x: currentPlayer.safeX,
-        y: currentPlayer.safeY,
-        drawing: false,
-      },
-      trail: [],
-    });
-    moveIntentRef.current = null;
-    setPadDirection(null);
-    setPadVector({ x: 0, y: 0 });
-    playGameSfx('select');
-    showNotice('封線收回', 'seal');
   }, [showNotice, syncGame]);
 
   const applyCapturedPowerups = useCallback((capturedKeys: Set<string>, defeatedEnemyIds: Set<number>, baseGrid: boolean[][], baseEnemies: RevelationEnemy[], time: number) => {
@@ -8796,10 +8837,10 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     let nextPlayer = playerRef.current;
     const collected = powerupsRef.current.filter((powerup) => capturedKeys.has(revelationCellKey(powerup.col, powerup.row)));
     collected.forEach((powerup) => {
-      if (powerup.kind === 'speed') nextPlayer = { ...nextPlayer, speedUntil: time + 9000 };
-      if (powerup.kind === 'freeze') nextPlayer = { ...nextPlayer, pulseCharges: Math.min(3, nextPlayer.pulseCharges + 1) };
-      if (powerup.kind === 'shield') nextPlayer = { ...nextPlayer, shieldUntil: time + 13000 };
-      if (powerup.kind === 'slow') nextPlayer = { ...nextPlayer, slowUntil: time + 9500 };
+      if (powerup.kind === 'speed') nextPlayer = { ...nextPlayer, speedUntil: Math.max(nextPlayer.speedUntil, time) + 16000 };
+      if (powerup.kind === 'freeze') nextPlayer = { ...nextPlayer, orbitCharges: Math.min(revelationOrbitMax, nextPlayer.orbitCharges + 2) };
+      if (powerup.kind === 'shield') nextPlayer = { ...nextPlayer, shieldUntil: Math.max(nextPlayer.shieldUntil, time) + 20000 };
+      if (powerup.kind === 'slow') nextPlayer = { ...nextPlayer, slowUntil: Math.max(nextPlayer.slowUntil, time) + 18000 };
       if (powerup.kind === 'life') syncGame({ lives: Math.min(5, livesRef.current + 1) });
       if (powerup.kind === 'reveal') nextGrid = claimRevelationDots(nextGrid, baseEnemies);
       showNotice(revelationPowerText[powerup.kind], powerup.kind);
@@ -8823,32 +8864,17 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     return { grid: nextGrid, player: nextPlayer, enemies: nextEnemies, powerups: refilled };
   }, [keepEnemiesOpen, showNotice, syncGame]);
 
-  const activatePulse = useCallback(() => {
-    const currentPlayer = playerRef.current;
-    if (currentPlayer.pulseCharges <= 0 || statusRef.current === 'won' || statusRef.current === 'lost') {
-      showNotice('需要圈住定身珠', 'freeze');
-      return;
-    }
-    const nextPlayer = {
-      ...currentPlayer,
-      pulseCharges: currentPlayer.pulseCharges - 1,
-      freezeUntil: performance.now() + 4200,
-    };
-    syncGame({ player: nextPlayer, status: statusRef.current === 'ready' ? 'playing' : statusRef.current });
-    playGameSfx('blast');
-    showNotice('凝光脈衝', 'freeze');
-  }, [showNotice, syncGame]);
-
   useEffect(() => {
     const board = arenaRef.current;
     if (!board) return;
     const updateSize = () => {
-      const rect = board.getBoundingClientRect();
+      const rect = (viewportRef.current ?? board).getBoundingClientRect();
       setArenaSize({ width: rect.width, height: rect.height });
     };
     updateSize();
     const observer = new ResizeObserver(updateSize);
     observer.observe(board);
+    if (viewportRef.current) observer.observe(viewportRef.current);
     return () => observer.disconnect();
   }, []);
 
@@ -8930,12 +8956,87 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
           return { ...enemy, attackAt: time + 2100 };
         });
 
+        if (currentPlayer.drawing && !claimHeldRef.current) {
+          beginTrailRetreat('封線回收');
+          syncGame({ enemies: nextEnemies, shots: nextShots });
+          rafRef.current = requestAnimationFrame(tick);
+          return;
+        }
+
+        if (currentPlayer.retracting) {
+          const path = retractPathRef.current;
+          const targetCell = path[0] ?? revelationPositionCell(currentPlayer.safeX, currentPlayer.safeY);
+          const target = revelationCellCenter(targetCell);
+          const dx = target.x - currentPlayer.x;
+          const dy = target.y - currentPlayer.y;
+          const distance = Math.hypot(dx, dy);
+          const step = revelationRetractSpeed * dt;
+          if (distance <= step) {
+            currentPlayer = { ...currentPlayer, x: target.x, y: target.y };
+            path.shift();
+            if (path.length === 0) {
+              currentPlayer = {
+                ...currentPlayer,
+                x: currentPlayer.safeX,
+                y: currentPlayer.safeY,
+                drawing: false,
+                retracting: false,
+              };
+              retractPathRef.current = [];
+              syncGame({ player: currentPlayer, trail: [], enemies: nextEnemies, shots: nextShots });
+            } else {
+              syncGame({ player: currentPlayer, trail: [...path], enemies: nextEnemies, shots: nextShots });
+            }
+          } else {
+            currentPlayer = {
+              ...currentPlayer,
+              x: currentPlayer.x + (dx / distance) * step,
+              y: currentPlayer.y + (dy / distance) * step,
+            };
+            syncGame({ player: currentPlayer, trail: [...path], enemies: nextEnemies, shots: nextShots });
+          }
+          rafRef.current = requestAnimationFrame(tick);
+          return;
+        }
+
+        const spendOrbitGuard = () => {
+          if (currentPlayer.orbitCharges <= 0) return false;
+          const remainingOrbs = currentPlayer.orbitCharges - 1;
+          currentPlayer = { ...currentPlayer, orbitCharges: remainingOrbs };
+          const guardRadius = 4.4;
+          nextShots = nextShots.filter((shot) => Math.hypot(shot.x - currentPlayer.x, shot.y - currentPlayer.y) > guardRadius);
+          nextEnemies = nextEnemies.map((enemy) => {
+            const dx = enemy.x - currentPlayer.x;
+            const dy = enemy.y - currentPlayer.y;
+            const distance = Math.max(0.001, Math.hypot(dx, dy));
+            if (distance > guardRadius + enemy.size * 0.45) return enemy;
+            const nx = dx / distance;
+            const ny = dy / distance;
+            const speed = Math.max(2.2, Math.hypot(enemy.vx, enemy.vy));
+            const pushedX = enemy.x + nx * 1.8;
+            const pushedY = enemy.y + ny * 1.8;
+            const canPush = !revelationEnemyBlocked(grid, pushedX, pushedY, enemy.size);
+            return {
+              ...enemy,
+              x: canPush ? pushedX : enemy.x,
+              y: canPush ? pushedY : enemy.y,
+              vx: nx * speed,
+              vy: ny * speed,
+              attackAt: enemy.kind === 'jellyfish' ? time + 1500 : enemy.attackAt,
+            };
+          });
+          syncGame({ player: currentPlayer, enemies: nextEnemies, shots: nextShots });
+          playGameSfx('blast');
+          showNotice(remainingOrbs > 0 ? `護身光彈 ${remainingOrbs}` : '光彈耗盡', 'freeze');
+          return true;
+        };
+
         const shotHitPlayer = currentPlayer.drawing && nextShots.some((shot) => Math.hypot(shot.x - currentPlayer.x, shot.y - currentPlayer.y) < shot.size * 0.5 + 0.38);
         const shotHitTrail = currentPlayer.drawing && trailRef.current.some((cell) => (
           nextShots.some((shot) => Math.hypot(shot.x - (cell.col + 0.5), shot.y - (cell.row + 0.5)) < shot.size * 0.5 + 0.3)
         ));
         if (shotHitPlayer || shotHitTrail) {
-          resetAfterHit(time);
+          if (!spendOrbitGuard()) resetAfterHit(time);
           rafRef.current = requestAnimationFrame(tick);
           return;
         }
@@ -8944,20 +9045,30 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
           const direction = intent.primary;
           const vector = cityDirectionVector(direction);
           const speed = (currentPlayer.speedUntil > time ? 10.3 : 7.2) * dt;
-          const nextX = clamp(currentPlayer.x + vector.x * speed, 0.5, revelationCols - 0.5);
-          const nextY = clamp(currentPlayer.y + vector.y * speed, 0.5, revelationRows - 0.5);
-          const nextCell = revelationPositionCell(nextX, nextY);
+          const proposedX = clamp(currentPlayer.x + vector.x * speed, 0.5, revelationCols - 0.5);
+          const proposedY = clamp(currentPlayer.y + vector.y * speed, 0.5, revelationRows - 0.5);
+          const nextCell = revelationPositionCell(proposedX, proposedY);
           const nextSafe = revelationCellIsClaimed(grid, nextCell.col, nextCell.row);
+          const currentCell = revelationPositionCell(currentPlayer.x, currentPlayer.y);
+          const currentBoundary = revelationCellIsBoundary(grid, currentCell.col, currentCell.row);
           let nextTrail = trailRef.current;
-          let hitTrail = false;
+          let moved = false;
 
           if (!currentPlayer.drawing) {
-            if (!nextSafe) {
+            if (nextSafe) {
+              if (revelationCellIsBoundary(grid, nextCell.col, nextCell.row)) {
+                currentPlayer = { ...currentPlayer, safeX: proposedX, safeY: proposedY, dir: direction };
+                moved = true;
+              } else {
+                currentPlayer = { ...currentPlayer, dir: direction };
+              }
+            } else if (claimHeldRef.current && currentBoundary) {
               const startCell = revelationPositionCell(currentPlayer.x, currentPlayer.y);
               nextTrail = [startCell, nextCell];
-              currentPlayer = { ...currentPlayer, drawing: true, dir: direction };
+              currentPlayer = { ...currentPlayer, drawing: true, retracting: false, dir: direction };
+              moved = true;
             } else {
-              currentPlayer = { ...currentPlayer, safeX: nextX, safeY: nextY, dir: direction };
+              currentPlayer = { ...currentPlayer, dir: direction };
             }
           } else if (nextSafe) {
             const capture = resolveRevelationCapture(grid, [...nextTrail, nextCell], nextEnemies);
@@ -8966,12 +9077,13 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
             const percent = revelationClaimedPercent(applied.grid);
             currentPlayer = {
               ...applied.player,
-              x: nextX,
-              y: nextY,
-              safeX: nextX,
-              safeY: nextY,
+              x: proposedX,
+              y: proposedY,
+              safeX: proposedX,
+              safeY: proposedY,
               dir: direction,
               drawing: false,
+              retracting: false,
             };
             syncGame({
               claimed: applied.grid,
@@ -8996,26 +9108,28 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
             const lastTrail = nextTrail[nextTrail.length - 1];
             const nextKey = revelationCellKey(nextCell.col, nextCell.row);
             const previousTrail = new Set(nextTrail.slice(0, -2).map((cell) => revelationCellKey(cell.col, cell.row)));
-            hitTrail = previousTrail.has(nextKey);
+            if (previousTrail.has(nextKey)) {
+              beginTrailRetreat('封線回收');
+              syncGame({ enemies: nextEnemies, shots: nextShots });
+              rafRef.current = requestAnimationFrame(tick);
+              return;
+            }
             if (!lastTrail || lastTrail.col !== nextCell.col || lastTrail.row !== nextCell.row) nextTrail = [...nextTrail, nextCell];
             currentPlayer = { ...currentPlayer, dir: direction };
+            moved = true;
           }
 
-          currentPlayer = { ...currentPlayer, x: nextX, y: nextY };
-          if (hitTrail) {
-            retractOwnTrail();
-            rafRef.current = requestAnimationFrame(tick);
-            return;
-          }
+          if (moved) currentPlayer = { ...currentPlayer, x: proposedX, y: proposedY };
           syncGame({ player: currentPlayer, trail: nextTrail });
         }
 
         const currentTrail = trailRef.current;
-        if (playerRef.current.drawing) {
-          const playerHit = nextEnemies.some((enemy) => Math.hypot(enemy.x - playerRef.current.x, enemy.y - playerRef.current.y) < enemy.size * 0.42 + 0.25);
+        currentPlayer = playerRef.current;
+        if (currentPlayer.drawing) {
+          const playerHit = nextEnemies.some((enemy) => Math.hypot(enemy.x - currentPlayer.x, enemy.y - currentPlayer.y) < enemy.size * 0.42 + 0.25);
           const trailHit = currentTrail.some((cell) => nextEnemies.some((enemy) => Math.hypot(enemy.x - (cell.col + 0.5), enemy.y - (cell.row + 0.5)) < enemy.size * 0.45));
           if (playerHit || trailHit) {
-            resetAfterHit(time);
+            if (!spendOrbitGuard()) resetAfterHit(time);
             rafRef.current = requestAnimationFrame(tick);
             return;
           }
@@ -9042,7 +9156,7 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [applyCapturedPowerups, arenaSize.height, arenaSize.width, onComplete, resetAfterHit, retractOwnTrail, showNotice, syncGame]);
+  }, [applyCapturedPowerups, arenaSize.height, arenaSize.width, beginTrailRetreat, onComplete, resetAfterHit, showNotice, syncGame]);
 
   const updatePad = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -9064,26 +9178,61 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
     setPadVector({ x: 0, y: 0 });
   }, []);
 
-  useGlobalControlReset(releasePad);
+  const pressClaim = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (claimPointerRef.current !== null) return;
+    claimPointerRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    claimHeldRef.current = true;
+    setClaimPressed(true);
+    if (statusRef.current === 'ready') syncGame({ status: 'playing' });
+  }, [syncGame]);
+
+  const releaseClaim = useCallback((event?: ReactPointerEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (event && claimPointerRef.current !== null && event.pointerId !== claimPointerRef.current) return;
+    claimPointerRef.current = null;
+    claimHeldRef.current = false;
+    setClaimPressed(false);
+    if (playerRef.current.drawing) beginTrailRetreat('封線回收');
+  }, [beginTrailRetreat]);
+
+  const releaseAllControls = useCallback(() => {
+    releasePad();
+    releaseClaim();
+  }, [releaseClaim, releasePad]);
+
+  useGlobalControlReset(releaseAllControls);
 
   useEffect(() => {
     const releaseMatchingPad = (event: PointerEvent) => {
       if (movePointerRef.current === event.pointerId) releasePad();
     };
-    const clearPad = () => releasePad();
+    const releaseMatchingClaim = (event: PointerEvent) => {
+      if (claimPointerRef.current === event.pointerId) releaseClaim();
+    };
+    const clearControls = () => releaseAllControls();
     window.addEventListener('pointerup', releaseMatchingPad);
     window.addEventListener('pointercancel', releaseMatchingPad);
-    window.addEventListener('blur', clearPad);
-    window.addEventListener('pagehide', clearPad);
+    window.addEventListener('pointerup', releaseMatchingClaim);
+    window.addEventListener('pointercancel', releaseMatchingClaim);
+    window.addEventListener('blur', clearControls);
+    window.addEventListener('pagehide', clearControls);
     return () => {
       window.removeEventListener('pointerup', releaseMatchingPad);
       window.removeEventListener('pointercancel', releaseMatchingPad);
-      window.removeEventListener('blur', clearPad);
-      window.removeEventListener('pagehide', clearPad);
+      window.removeEventListener('pointerup', releaseMatchingClaim);
+      window.removeEventListener('pointercancel', releaseMatchingClaim);
+      window.removeEventListener('blur', clearControls);
+      window.removeEventListener('pagehide', clearControls);
     };
-  }, [releasePad]);
+  }, [releaseAllControls, releaseClaim, releasePad]);
 
   const cellPx = Math.max(18, Math.min((arenaSize.width || 360) / 11, (arenaSize.height || 560) / 18));
+  const renderViewCols = Math.max(1, (arenaSize.width || cellPx * 11) / cellPx);
+  const renderViewRows = Math.max(1, (arenaSize.height || cellPx * 18) / cellPx);
   const worldWidth = cellPx * revelationCols;
   const worldHeight = cellPx * revelationRows;
   const viewportStyle: CSSProperties = {
@@ -9121,6 +9270,8 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
   }, [claimed]);
   const percent = revelationClaimedPercent(claimed);
   const remainingSec = Math.ceil(remaining / 1000);
+  const revelationMode = player.retracting ? '回收' : player.drawing ? '開圖' : '邊界';
+  const revelationModeClass = player.retracting ? 'retract' : player.drawing ? 'danger' : 'safe';
   const padStickStyle: CSSProperties = {
     ['--pad-x' as string]: `${padVector.x}px`,
     ['--pad-y' as string]: `${padVector.y}px`,
@@ -9143,7 +9294,7 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
         </button>
       </div>
       <div className="revelation-arena" ref={arenaRef}>
-        <div className={`revelation-viewport ${player.drawing ? 'drawing' : 'safe'}`} style={viewportStyle}>
+        <div className={`revelation-viewport ${player.retracting ? 'retracting' : player.drawing ? 'drawing' : 'safe'}`} ref={viewportRef} style={viewportStyle}>
           <div className="revelation-world" style={worldStyle}>
             <img className="revelation-bg" src={assets.revelation.frozen} alt="" />
             <div className="revelation-frost" />
@@ -9166,16 +9317,19 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
             {shots.map((shot) => (
               <span className="revelation-shot" key={shot.id} style={tokenStyle(shot.x, shot.y, shot.size)} />
             ))}
-            <span className={`revelation-player dir-${player.dir} ${player.drawing ? 'drawing' : ''} ${player.shieldUntil > performance.now() ? 'shielded' : ''}`} style={tokenStyle(player.x, player.y, 1.14)}>
+            <span className={`revelation-player dir-${player.dir} ${player.drawing ? 'drawing' : ''} ${player.retracting ? 'retracting' : ''} ${player.shieldUntil > performance.now() ? 'shielded' : ''}`} style={tokenStyle(player.x, player.y, 1.14)}>
               <img src={assets.lightBombHeads.prince} alt="" />
+              {Array.from({ length: Math.min(player.orbitCharges, revelationOrbitMax) }).map((_, index) => (
+                <i className={`revelation-orb orb-${index}`} key={`revelation-orb-${index}`} />
+              ))}
             </span>
           </div>
           <div className="revelation-hud">
             <span>封印 <strong>{percent}%</strong></span>
-            <span className={player.drawing ? 'danger' : 'safe'}>{player.drawing ? '畫線' : '安全'}</span>
+            <span className={revelationModeClass}>{revelationMode}</span>
             <span>目標 <strong>{revelationTargetPercent}%</strong></span>
             <span>時 <strong>{remainingSec}</strong></span>
-            <span>命 <strong>{lives}</strong></span>
+            <span>彈 <strong>{player.orbitCharges}</strong> 命 <strong>{lives}</strong></span>
           </div>
           <div className="revelation-minimap">
             <span
@@ -9183,8 +9337,8 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
               style={{
                 left: `${(camera.x / revelationCols) * 100}%`,
                 top: `${(camera.y / revelationRows) * 100}%`,
-                width: `${(11 / revelationCols) * 100}%`,
-                height: `${(18 / revelationRows) * 100}%`,
+                width: `${(renderViewCols / revelationCols) * 100}%`,
+                height: `${(renderViewRows / revelationRows) * 100}%`,
               }}
             />
             <span className="player" style={{ left: `${(player.x / revelationCols) * 100}%`, top: `${(player.y / revelationRows) * 100}%` }} />
@@ -9199,43 +9353,9 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
           {status === 'ready' && (
             <div className="revelation-ready">
               <strong>冰晶封印板</strong>
-              <span>從邊界拉出光線，回到安全冰面完成解封。</span>
+              <span>沿邊界移動，按住右下光印才出界開圖。</span>
             </div>
           )}
-          <div
-            className={`revelation-controls ${padDirection ? `active-${padDirection}` : ''}`}
-            aria-label="方向控制"
-            onPointerDown={(event) => {
-              if (movePointerRef.current !== null) return;
-              movePointerRef.current = event.pointerId;
-              event.currentTarget.setPointerCapture(event.pointerId);
-              updatePad(event);
-            }}
-            onPointerMove={(event) => {
-              if (movePointerRef.current === event.pointerId) updatePad(event);
-            }}
-            onPointerUp={releasePad}
-            onPointerCancel={releasePad}
-            onLostPointerCapture={releasePad}
-          >
-            <span className="revelation-stick-base" />
-            <span className="revelation-stick-arrow up"><ChevronUp size={14} /></span>
-            <span className="revelation-stick-arrow left"><ChevronLeft size={14} /></span>
-            <span className="revelation-stick-arrow right"><ChevronRight size={14} /></span>
-            <span className="revelation-stick-arrow down"><ChevronDown size={14} /></span>
-            <span className="revelation-stick" style={padStickStyle} />
-          </div>
-          <button
-            className={`revelation-action ${player.pulseCharges > 0 ? 'charged' : ''}`}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              activatePulse();
-            }}
-            aria-label="凝光脈衝"
-          >
-            <Sparkles size={24} />
-            <small>{player.pulseCharges}</small>
-          </button>
           {(status === 'won' || status === 'lost') && (
             <div className={`revelation-result ${status}`}>
               {status === 'won' && <img src={assets.revelation.released} alt="" />}
@@ -9247,6 +9367,40 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
             </div>
           )}
         </div>
+        <div
+          className={`revelation-controls ${padDirection ? `active-${padDirection}` : ''}`}
+          aria-label="方向控制"
+          onPointerDown={(event) => {
+            if (movePointerRef.current !== null) return;
+            movePointerRef.current = event.pointerId;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            updatePad(event);
+          }}
+          onPointerMove={(event) => {
+            if (movePointerRef.current === event.pointerId) updatePad(event);
+          }}
+          onPointerUp={releasePad}
+          onPointerCancel={releasePad}
+          onLostPointerCapture={releasePad}
+        >
+          <span className="revelation-stick-base" />
+          <span className="revelation-stick-arrow up"><ChevronUp size={14} /></span>
+          <span className="revelation-stick-arrow left"><ChevronLeft size={14} /></span>
+          <span className="revelation-stick-arrow right"><ChevronRight size={14} /></span>
+          <span className="revelation-stick-arrow down"><ChevronDown size={14} /></span>
+          <span className="revelation-stick" style={padStickStyle} />
+        </div>
+        <button
+          className={`revelation-action ${claimPressed || player.drawing ? 'charged' : ''}`}
+          onPointerDown={pressClaim}
+          onPointerUp={releaseClaim}
+          onPointerCancel={releaseClaim}
+          onLostPointerCapture={releaseClaim}
+          aria-label="按住開圖"
+        >
+          <Sparkles size={24} />
+          <small>{claimPressed || player.drawing ? '開圖' : '按住'}</small>
+        </button>
       </div>
     </section>
   );
