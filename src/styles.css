@@ -5308,7 +5308,7 @@ button:disabled {
   min-height: 0;
   display: grid;
   place-items: stretch;
-  padding: 0 0 calc(150px + env(safe-area-inset-bottom));
+  padding: max(96px, calc(env(safe-area-inset-top) + 88px)) 0 calc(150px + env(safe-area-inset-bottom));
   overflow: hidden;
   touch-action: none;
 }
@@ -5720,9 +5720,9 @@ button:disabled {
 
 .lightbomb-hud {
   position: absolute;
-  z-index: 20;
-  top: max(48px, calc(env(safe-area-inset-top) + 42px));
-  left: 0;
+  z-index: 25;
+  top: max(42px, calc(env(safe-area-inset-top) + 36px));
+  left: 66px;
   right: 0;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -5766,6 +5766,14 @@ button:disabled {
   text-align: center;
   pointer-events: none;
   animation: cityNotice 1.45s ease-out both;
+}
+
+.lightbomb-minimap {
+  top: max(42px, calc(env(safe-area-inset-top) + 36px));
+  left: 8px;
+  width: 52px;
+  height: 52px;
+  transform: none;
 }
 
 .lightbomb-controls {

@@ -73,7 +73,7 @@ const sceneVersions: Record<PlayableScene, string> = {
   tower: 'v1.4',
   city: 'v2.5',
   breakthrough: 'v1.7',
-  lightbomb: 'v2.3',
+  lightbomb: 'v2.4',
   revelation: 'v1.8',
 };
 const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
@@ -8541,6 +8541,32 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
         </button>
       </div>
       <div className="lightbomb-arena" ref={arenaRef}>
+        <div className="lightbomb-hud">
+          <span>{currentLevelConfig.title}</span>
+          <span>{currentCharacter.name}</span>
+          <span>敵 {enemies.length}</span>
+          <span>光爆 {bombs.length}/{player.maxBombs}</span>
+          <span>火力 {player.range}</span>
+        </div>
+        <div className="lightbomb-minimap">
+          <span
+            className="view"
+            style={{
+              left: `${(camera.x / lightBombCols) * 100}%`,
+              top: `${(camera.y / lightBombRows) * 100}%`,
+              width: `${(renderViewCols / lightBombCols) * 100}%`,
+              height: `${(renderViewRows / lightBombRows) * 100}%`,
+            }}
+          />
+          {exitFound && <span className={`goal ${exitVisible ? 'open' : ''}`} style={{ left: `${((exit.col + 0.5) / lightBombCols) * 100}%`, top: `${((exit.row + 0.5) / lightBombRows) * 100}%` }} />}
+          <span className="player" style={{ left: `${((player.x + 0.5) / lightBombCols) * 100}%`, top: `${((player.y + 0.5) / lightBombRows) * 100}%` }} />
+          {enemies.map((enemy) => (
+            <span className={`enemy ${enemy.kind}`} key={`lightbomb-mini-${enemy.id}`} style={{ left: `${((enemy.x + 0.5) / lightBombCols) * 100}%`, top: `${((enemy.y + 0.5) / lightBombRows) * 100}%` }} />
+          ))}
+          {powerups.slice(0, 10).map((powerup) => (
+            <span className="food" key={`lightbomb-mini-power-${powerup.id}`} style={{ left: `${((powerup.col + 0.5) / lightBombCols) * 100}%`, top: `${((powerup.row + 0.5) / lightBombRows) * 100}%` }} />
+          ))}
+        </div>
         <div className="lightbomb-viewport" ref={viewportRef} style={viewportStyle}>
           <div className="lightbomb-world" style={worldStyle}>
             {tiles.map((tile) => <span className={`lightbomb-tile ${tile.kind}`} key={tile.id} style={lightBombCellStyle(tile.row, tile.col)} />)}
@@ -8562,32 +8588,6 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
             <span className={`lightbomb-player dir-${player.dir} ${shielded ? 'shielded' : ''}`} style={lightBombTokenStyle(player.x, player.y)}>
               <img src={assets.lightBombHeads[player.character]} alt="" />
             </span>
-          </div>
-          <div className="lightbomb-hud">
-            <span>{currentLevelConfig.title}</span>
-            <span>{currentCharacter.name}</span>
-            <span>敵 {enemies.length}</span>
-            <span>光爆 {bombs.length}/{player.maxBombs}</span>
-            <span>火力 {player.range}</span>
-          </div>
-          <div className="lightbomb-minimap">
-            <span
-              className="view"
-              style={{
-                left: `${(camera.x / lightBombCols) * 100}%`,
-                top: `${(camera.y / lightBombRows) * 100}%`,
-                width: `${(renderViewCols / lightBombCols) * 100}%`,
-                height: `${(renderViewRows / lightBombRows) * 100}%`,
-              }}
-            />
-            {exitFound && <span className={`goal ${exitVisible ? 'open' : ''}`} style={{ left: `${((exit.col + 0.5) / lightBombCols) * 100}%`, top: `${((exit.row + 0.5) / lightBombRows) * 100}%` }} />}
-            <span className="player" style={{ left: `${((player.x + 0.5) / lightBombCols) * 100}%`, top: `${((player.y + 0.5) / lightBombRows) * 100}%` }} />
-            {enemies.map((enemy) => (
-              <span className={`enemy ${enemy.kind}`} key={`lightbomb-mini-${enemy.id}`} style={{ left: `${((enemy.x + 0.5) / lightBombCols) * 100}%`, top: `${((enemy.y + 0.5) / lightBombRows) * 100}%` }} />
-            ))}
-            {powerups.slice(0, 10).map((powerup) => (
-              <span className="food" key={`lightbomb-mini-power-${powerup.id}`} style={{ left: `${((powerup.col + 0.5) / lightBombCols) * 100}%`, top: `${((powerup.row + 0.5) / lightBombRows) * 100}%` }} />
-            ))}
           </div>
           {debugGrid && <GridDebugOverlay title="BOMB GRID" items={lightBombDebugItems} />}
           {notice && <div className={`lightbomb-notice ${notice.kind}`} key={notice.id}>{notice.text}</div>}
