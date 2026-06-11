@@ -73,7 +73,7 @@ const sceneVersions: Record<PlayableScene, string> = {
   tower: 'v1.4',
   city: 'v2.5',
   breakthrough: 'v1.7',
-  lightbomb: 'v2.2',
+  lightbomb: 'v2.3',
   revelation: 'v1.8',
 };
 const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
@@ -7892,6 +7892,7 @@ function BreakthroughShooterGame({ debugGrid, onBack, onComplete }: { debugGrid:
 function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boolean; onBack: () => void; onComplete: GameCompleteHandler }) {
   const firstLevel = useMemo(() => createLightBombLevel(lightBombLevelConfig(1)), []);
   const arenaRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const pausedRef = useGamePausedRef();
   const rafRef = useRef<number | null>(null);
   const lastTime = useRef<number | null>(null);
@@ -8013,12 +8014,13 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
     const arena = arenaRef.current;
     if (!arena) return;
     const updateSize = () => {
-      const rect = arena.getBoundingClientRect();
+      const rect = (viewportRef.current ?? arena).getBoundingClientRect();
       setArenaSize({ width: rect.width, height: rect.height });
     };
     updateSize();
     const observer = new ResizeObserver(updateSize);
     observer.observe(arena);
+    if (viewportRef.current) observer.observe(viewportRef.current);
     return () => observer.disconnect();
   }, []);
 
@@ -8460,14 +8462,14 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
   }, [applyLevel, canEnterCell, onComplete, showNotice, tryMoveIntent]);
 
   const cellPx = Math.max(17, Math.min((arenaSize.width || 360) / lightBombViewCols, (arenaSize.height || 520) / lightBombViewRows));
+  const renderViewCols = Math.max(1, (arenaSize.width || cellPx * lightBombViewCols) / cellPx);
+  const renderViewRows = Math.max(1, (arenaSize.height || cellPx * lightBombViewRows) / cellPx);
   const worldPx = cellPx * lightBombCols;
   const camera = {
-    x: clamp(player.x - lightBombViewCols / 2, 0, lightBombCols - lightBombViewCols),
-    y: clamp(player.y - lightBombViewRows / 2, 0, lightBombRows - lightBombViewRows),
+    x: clamp(player.x - renderViewCols / 2, 0, Math.max(0, lightBombCols - renderViewCols)),
+    y: clamp(player.y - renderViewRows / 2, 0, Math.max(0, lightBombRows - renderViewRows)),
   };
   const viewportStyle: CSSProperties = {
-    width: `${cellPx * lightBombViewCols}px`,
-    height: `${cellPx * lightBombViewRows}px`,
     ['--bomb-cell-px' as string]: `${cellPx}px`,
   };
   const worldStyle: CSSProperties = {
@@ -8539,7 +8541,7 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
         </button>
       </div>
       <div className="lightbomb-arena" ref={arenaRef}>
-        <div className="lightbomb-viewport" style={viewportStyle}>
+        <div className="lightbomb-viewport" ref={viewportRef} style={viewportStyle}>
           <div className="lightbomb-world" style={worldStyle}>
             {tiles.map((tile) => <span className={`lightbomb-tile ${tile.kind}`} key={tile.id} style={lightBombCellStyle(tile.row, tile.col)} />)}
             {exitFound && <span className={`lightbomb-exit ${exitVisible ? 'open' : 'locked'}`} style={lightBombTokenStyle(exit.col, exit.row)} />}
@@ -8574,8 +8576,8 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
               style={{
                 left: `${(camera.x / lightBombCols) * 100}%`,
                 top: `${(camera.y / lightBombRows) * 100}%`,
-                width: `${(lightBombViewCols / lightBombCols) * 100}%`,
-                height: `${(lightBombViewRows / lightBombRows) * 100}%`,
+                width: `${(renderViewCols / lightBombCols) * 100}%`,
+                height: `${(renderViewRows / lightBombRows) * 100}%`,
               }}
             />
             {exitFound && <span className={`goal ${exitVisible ? 'open' : ''}`} style={{ left: `${((exit.col + 0.5) / lightBombCols) * 100}%`, top: `${((exit.row + 0.5) / lightBombRows) * 100}%` }} />}
@@ -8589,37 +8591,6 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
           </div>
           {debugGrid && <GridDebugOverlay title="BOMB GRID" items={lightBombDebugItems} />}
           {notice && <div className={`lightbomb-notice ${notice.kind}`} key={notice.id}>{notice.text}</div>}
-          <div
-            className={`lightbomb-controls ${padDirection ? `active-${padDirection}` : ''}`}
-            aria-label="方向控制"
-            onPointerDown={(event) => {
-              if (movePointerRef.current !== null) return;
-              movePointerRef.current = event.pointerId;
-              event.currentTarget.setPointerCapture(event.pointerId);
-              updatePad(event);
-            }}
-            onPointerMove={(event) => {
-              if (movePointerRef.current === event.pointerId) updatePad(event);
-            }}
-            onPointerUp={releasePad}
-            onPointerCancel={releasePad}
-            onLostPointerCapture={releasePad}
-          >
-            <span className="lightbomb-stick-base" />
-            <span className="lightbomb-stick-arrow up"><ChevronUp size={14} /></span>
-            <span className="lightbomb-stick-arrow left"><ChevronLeft size={14} /></span>
-            <span className="lightbomb-stick-arrow right"><ChevronRight size={14} /></span>
-            <span className="lightbomb-stick-arrow down"><ChevronDown size={14} /></span>
-            <span className="lightbomb-stick" style={padStickStyle} />
-          </div>
-          <button
-            className={`lightbomb-action ${remote ? 'remote' : ''}`}
-            onPointerDown={pressBombAction}
-            onClick={clickBombAction}
-            aria-label="放置海光爆彈"
-          >
-            <Sparkles size={24} />
-          </button>
           {status !== 'playing' && (
             <div className="lightbomb-result">
               <strong>{status === 'won' ? '三層通路開啟' : '光爆失誤'}</strong>
@@ -8630,6 +8601,37 @@ function LightBombMazeGame({ debugGrid, onBack, onComplete }: { debugGrid: boole
             </div>
           )}
         </div>
+        <div
+          className={`lightbomb-controls ${padDirection ? `active-${padDirection}` : ''}`}
+          aria-label="方向控制"
+          onPointerDown={(event) => {
+            if (movePointerRef.current !== null) return;
+            movePointerRef.current = event.pointerId;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            updatePad(event);
+          }}
+          onPointerMove={(event) => {
+            if (movePointerRef.current === event.pointerId) updatePad(event);
+          }}
+          onPointerUp={releasePad}
+          onPointerCancel={releasePad}
+          onLostPointerCapture={releasePad}
+        >
+          <span className="lightbomb-stick-base" />
+          <span className="lightbomb-stick-arrow up"><ChevronUp size={14} /></span>
+          <span className="lightbomb-stick-arrow left"><ChevronLeft size={14} /></span>
+          <span className="lightbomb-stick-arrow right"><ChevronRight size={14} /></span>
+          <span className="lightbomb-stick-arrow down"><ChevronDown size={14} /></span>
+          <span className="lightbomb-stick" style={padStickStyle} />
+        </div>
+        <button
+          className={`lightbomb-action ${remote ? 'remote' : ''}`}
+          onPointerDown={pressBombAction}
+          onClick={clickBombAction}
+          aria-label="放置海光爆彈"
+        >
+          <Sparkles size={24} />
+        </button>
       </div>
     </section>
   );
