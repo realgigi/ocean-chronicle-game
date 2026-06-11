@@ -74,7 +74,7 @@ const sceneVersions: Record<PlayableScene, string> = {
   city: 'v2.5',
   breakthrough: 'v1.7',
   lightbomb: 'v2.2',
-  revelation: 'v1.7',
+  revelation: 'v1.8',
 };
 const sceneStarThresholds: Record<PlayableScene, [number, number, number]> = {
   combat: [900, 1300, 1500],
@@ -9056,12 +9056,8 @@ function AncientRevelationGame({ onBack, onComplete }: { onBack: () => void; onC
 
           if (!currentPlayer.drawing) {
             if (nextSafe) {
-              if (revelationCellIsBoundary(grid, nextCell.col, nextCell.row)) {
-                currentPlayer = { ...currentPlayer, safeX: proposedX, safeY: proposedY, dir: direction };
-                moved = true;
-              } else {
-                currentPlayer = { ...currentPlayer, dir: direction };
-              }
+              currentPlayer = { ...currentPlayer, safeX: proposedX, safeY: proposedY, dir: direction };
+              moved = true;
             } else if (claimHeldRef.current && currentBoundary) {
               const startCell = revelationPositionCell(currentPlayer.x, currentPlayer.y);
               nextTrail = [startCell, nextCell];
